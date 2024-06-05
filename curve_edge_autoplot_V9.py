@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Curve edge autoplot
 # Authors:   W. Engelke, N. Callahan, University of Alabama
 # Enhancements from N. Frissell, University of Scranton
