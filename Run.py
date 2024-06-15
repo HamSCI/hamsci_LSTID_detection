@@ -32,7 +32,8 @@ data_out_path  = 'processed_data/full_data.joblib'
 label_out_path = 'labels/labels.joblib'
 
 def plot_filter_response(sos,fs,Wn=None,
-                         db_lim=(-40,1),flim=None,figsize=(10,6),
+                         db_lim=(-40,1),flim=None,figsize=(18,8),
+                         worN=4096,plot_phase=False,
 						plt_fname='filter.png'):
     """
     Plots the magnitude and phase response of a filter.
@@ -49,15 +50,14 @@ def plot_filter_response(sos,fs,Wn=None,
         if Wn.shape == ():
             Wn.shape = (1,)
     
-    f, h  = signal.sosfreqz(sos, worN=fs, fs=fs)
+    f, h    = signal.sosfreqz(sos, worN=worN, fs=fs)
     
-    fig = plt.figure(figsize=figsize)
-    
-    plt.subplot(211)
+    fig     = plt.figure(figsize=figsize)
+    ax      = fig.add_subplot(211)
     plt.plot(f, 20 * np.log10(abs(h)))
     # plt.xscale('log')
     plt.title('Filter Frequency Response')
-    plt.xlabel('Frequency [Hz]')
+#    plt.xlabel('Frequency [Hz]')
     plt.ylabel('Amplitude [dB]')
     plt.grid(which='both', axis='both')
     if Wn is not None:
@@ -66,19 +66,39 @@ def plot_filter_response(sos,fs,Wn=None,
     plt.xlim(flim)
     plt.ylim(db_lim)
 
-    # plt.ylim(-6,0)
+    xtks    = ax.get_xticks()
+    xtls    = []
+    for etn,xtk in enumerate(xtks):
+        if xtk == 0:
+            T_lbl   = 'Inf'
+            f_lbl   = '{:g}'.format(xtk)
+        elif etn == len(xtks)-1:
+            T_lbl   = 'T [min]'
+            f_lbl   = 'f [mHz]'
+        else:
+            T_sec   = 1./xtk
+            T_lbl   = '{:0.0f}'.format(T_sec/60.)
+            f_lbl   = '{:g}'.format(xtk*1e3)
+        
+        xtl = '{!s}\n{!s}'.format(T_lbl,f_lbl)
+        xtls.append(xtl)
 
-    plt.subplot(212)
-    plt.plot(f, np.unwrap(np.angle(h)))
-    # plt.xscale('log')
-    plt.title('Filter Phase Response')
-    plt.xlabel('Frequency [Hz]')
-    plt.ylabel('Phase [rad]')
-    plt.grid(which='both', axis='both')
-    if Wn is not None:
-        for cf in Wn:
-            plt.axvline(cf, color='green') # cutoff frequency
-    plt.xlim(flim)
+    ax.set_xticks(xtks)
+    ax.set_xticklabels(xtls)
+
+    # plt.ylim(-6,0)
+    if plot_phase:
+        plt.subplot(212)
+        plt.plot(f, np.unwrap(np.angle(h)))
+        # plt.xscale('log')
+        plt.title('Filter Phase Response')
+        plt.xlabel('Frequency [Hz]')
+        plt.ylabel('Phase [rad]')
+        plt.grid(which='both', axis='both')
+        if Wn is not None:
+            for cf in Wn:
+                plt.axvline(cf, color='green') # cutoff frequency
+        plt.xlim(flim)
 
     plt.tight_layout()
     plt.savefig(plt_fname,bbox_inches='tight')
@@ -254,18 +274,28 @@ def run_edge_detect(
         edge_3      = pd.Series(interp,index=times_xlim,name=date)
 
         # Apply band-pass filter.
-        btype = 'high'
-        ws    = 2000 # Band Stop Edge Frequencies
-        wp    = 3000 # Band Pass Edge Frequencies
+        btype   = 'band'
+        bp_T0   = datetime.timedelta(hours=1)
+        bp_T1   = datetime.timedelta(hours=3)
+        bp_dt   = datetime.timedelta(minutes=15)
+
+        # Band Pass Edge Periods
+        wp_td   = [bp_T1, bp_T0]
+
+        # Band Stop Edge Periods
+        ws_td   = [bp_T1-bp_dt, bp_T0+bp_dt]
 
         gpass =  3 # The maximum loss in the passband (dB).
         gstop = 40 # The minimum attenuation in the stopband (dB).
 
-        fs = 384000
-        N, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
-        sos   = signal.butter(N, Wn, btype, fs=fs, output='sos')
+        fs      = 1./Ts.total_seconds()
+        ws      = [1./x.total_seconds() for x in ws_td]
+        wp      = [1./x.total_seconds() for x in wp_td]
+        N_filt, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
+        sos     = signal.butter(N_filt, Wn, btype, fs=fs, output='sos')
 
-        flim = (0,10000)
+        T_lim_1 = datetime.timedelta(minutes=45)
+        flim    = (None,1./T_lim_1.total_seconds())
         filter_fpath = os.path.join(plt_save_path,'filter.png')
         plot_filter_response(sos,fs,Wn,flim=flim,plt_fname=filter_fpath)
         import ipdb; ipdb.set_trace()
