@@ -15,15 +15,16 @@ from scipy.ndimage import gaussian_filter
 from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
-#from IPython.display import clear_output
 
+plt.rcParams['font.size']           = 18
+plt.rcParams['font.weight']         = 'bold'
+plt.rcParams['axes.titleweight']    = 'bold'
+plt.rcParams['axes.labelweight']    = 'bold'
+plt.rcParams['axes.xmargin']        = 0
+#plt.rcParams['axes.grid']           = True
+#plt.rcParams['grid.linestyle']      = ':'
 
-# In[8]:
-
-
-# parent_dir     = 'raw_data'
 parent_dir     = 'data_files'
-
 label_csv_path = 'official_labels.csv'
 data_out_path  = 'processed_data/full_data.joblib'
 label_out_path = 'labels/labels.joblib'
@@ -86,13 +87,13 @@ def run_edge_detect(
     csv_save_path=None,
     thresh=None,
 ):
+
     processed_dates = list()
     if plt_save_path is not None:
         save_plt = save_wrap(plt_save_path)
     else:
         save_plt = None
         
-#     final_edge_dict = dict()
     final_edge_list = list()
     if dates == 'all':
         date_gen = date_iter.iter_all()
@@ -119,7 +120,7 @@ def run_edge_detect(
 
         arr = gaussian_filter(arr.T, sigma=(sigma, sigma))  # [::-1,:]
         med_lines, min_line, minz_line = measure_thresholds(
-            arr, # [::-1]
+            arr,
             qs=qs, 
             occurrence_n=occurence_n, 
             i_max=i_max
@@ -158,14 +159,15 @@ def run_edge_detect(
         else:
             raise ValueError(f'Threshold {thresh} of type {type(thresh)} is invalid')
 
-#         final_edge_dict[date] = min_line.squeeze()
         final_edge_list.append(
             pd.Series(min_line.squeeze(), index=times, name=date)
         )
 
         if plot:
-            fig, ax = plt.subplots(1, 1, figsize=(15,8))
-            plt.title(f'| {date} |')
+            fig     = plt.figure(figsize=(16,8))
+            ax      = fig.add_subplot(1,1,1)
+
+            ax.set_title(f'| {date} |')
 
             ax.pcolormesh(times,ranges_km,arr,cmap='plasma')
             fig.autofmt_xdate()
@@ -184,7 +186,13 @@ def run_edge_detect(
             ax.set_xlabel('Time [UTC]')
             ax.set_ylabel('Range [km]')
 
-            ax.legend(loc='upper right')
+            x_0 = date + datetime.timedelta(hours=12)
+            x_1 = date + datetime.timedelta(hours=24)
+            
+            ax.set_xlim(x_0,x_1)
+            ax.set_ylim(0,3000)
+
+            ax.legend(loc='lower right',fontsize='small',ncols=4)
 
             if save_plt is not None:
                 save_plt(date)
