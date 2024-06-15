@@ -176,6 +176,8 @@ def run_edge_detect(
                 lbl = '{!s}'.format(col)
                 ax.plot(times,data[col],label=lbl)
 
+            ax.plot(times,min_line,lw=2,label='Final Edge')
+
             ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
             ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
 
