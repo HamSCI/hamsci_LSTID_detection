@@ -31,6 +31,36 @@ label_csv_path = 'official_labels.csv'
 data_out_path  = 'processed_data/full_data.joblib'
 label_out_path = 'labels/labels.joblib'
 
+def fmt_fxaxis(ax,flim=None):
+    """
+    Format the frequency x-axis of a spectrum plot.
+    """
+
+    if flim is None:
+        T_lim_1 = datetime.timedelta(minutes=45)
+        flim    = (None,1./T_lim_1.total_seconds())
+
+    ax.set_xlim(flim)
+    xtks    = ax.get_xticks()
+    xtls    = []
+    for etn,xtk in enumerate(xtks):
+        if xtk == 0:
+            T_lbl   = 'Inf'
+            f_lbl   = '{:g}'.format(xtk)
+        elif etn == len(xtks)-1:
+            T_lbl   = 'T [min]'
+            f_lbl   = 'f [mHz]'
+        else:
+            T_sec   = 1./xtk
+            T_lbl   = '{:0.0f}'.format(T_sec/60.)
+            f_lbl   = '{:g}'.format(xtk*1e3)
+        
+        xtl = '{!s}\n{!s}'.format(T_lbl,f_lbl)
+        xtls.append(xtl)
+
+    ax.set_xticks(xtks)
+    ax.set_xticklabels(xtls)
+
 def plot_filter_response(sos,fs,Wn=None,
                          db_lim=(-40,1),flim=None,figsize=(18,8),
                          worN=4096,plot_phase=False,
@@ -63,28 +93,9 @@ def plot_filter_response(sos,fs,Wn=None,
     if Wn is not None:
         for cf in Wn:
             plt.axvline(cf, color='green') # cutoff frequency
-    plt.xlim(flim)
     plt.ylim(db_lim)
 
-    xtks    = ax.get_xticks()
-    xtls    = []
-    for etn,xtk in enumerate(xtks):
-        if xtk == 0:
-            T_lbl   = 'Inf'
-            f_lbl   = '{:g}'.format(xtk)
-        elif etn == len(xtks)-1:
-            T_lbl   = 'T [min]'
-            f_lbl   = 'f [mHz]'
-        else:
-            T_sec   = 1./xtk
-            T_lbl   = '{:0.0f}'.format(T_sec/60.)
-            f_lbl   = '{:g}'.format(xtk*1e3)
-        
-        xtl = '{!s}\n{!s}'.format(T_lbl,f_lbl)
-        xtls.append(xtl)
-
-    ax.set_xticks(xtks)
-    ax.set_xticklabels(xtls)
+    fmt_fxaxis(ax)
 
     # plt.ylim(-6,0)
     if plot_phase:
@@ -151,6 +162,22 @@ def fmt_xaxis(ax,xlim=None,label=True):
     ax.set_xlabel('Time [UTC]')
     ax.set_xlim(xlim)
 
+
+def psd_series(series):
+    """
+    Calculate the one-sided power spectral density for a pandas series.
+    """
+    Ts_ns       = float(np.mean(np.diff(series.index)))
+    Ts          = datetime.timedelta(seconds=(Ts_ns*1e-9))
+    psd         = np.abs(np.fft.fftshift(np.fft.fft(series)*Ts.total_seconds()*2))**2
+    ff          = np.fft.fftshift(np.fft.fftfreq(len(series),Ts.total_seconds()))
+
+    tf          = ff >= 0
+    psd         = psd[tf]
+    ff          = ff[tf]
+    psd_series  = pd.Series(psd,index=ff,name=series.name)
+    return psd_series
+
 def run_edge_detect(
     dates,
     x_trim=.08333,
@@ -191,7 +218,7 @@ def run_edge_detect(
         arr = arr[xr:-xl, yr:-yl]
 
         ranges_km   = arr.coords['height']
-        arr_times       = [date + x for x in pd.to_timedelta(arr.coords['time'])]
+        arr_times   = [date + x for x in pd.to_timedelta(arr.coords['time'])]
         Ts          = np.mean(np.diff(arr_times))
 
         arr_xr  = arr
@@ -272,8 +299,10 @@ def run_edge_detect(
         xp_interp   = [x.value for x in edge_2.index]
         interp      = np.interp(x_interp,xp_interp,edge_2.values)
         edge_3      = pd.Series(interp,index=times_xlim,name=date)
+        
+        edge_3_psd  = psd_series(edge_3)
 
-        # Apply band-pass filter.
+        # Design and apply band-pass filter.
         btype   = 'band'
         bp_T0   = datetime.timedelta(hours=1)
         bp_T1   = datetime.timedelta(hours=3)
@@ -281,7 +310,6 @@ def run_edge_detect(
 
         # Band Pass Edge Periods
         wp_td   = [bp_T1, bp_T0]
-
         # Band Stop Edge Periods
         ws_td   = [bp_T1-bp_dt, bp_T0+bp_dt]
 
@@ -294,15 +322,16 @@ def run_edge_detect(
         N_filt, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
         sos     = signal.butter(N_filt, Wn, btype, fs=fs, output='sos')
 
-        T_lim_1 = datetime.timedelta(minutes=45)
-        flim    = (None,1./T_lim_1.total_seconds())
         filter_fpath = os.path.join(plt_save_path,'filter.png')
-        plot_filter_response(sos,fs,Wn,flim=flim,plt_fname=filter_fpath)
-        import ipdb; ipdb.set_trace()
+        plot_filter_response(sos,fs,Wn,plt_fname=filter_fpath)
+
+        edge_4      = edge_3.copy()
+        edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
+        edge_4_psd  = psd_series(edge_4)
 
         if plot:
             nCols   = 1
-            nRows   = 2
+            nRows   = 4
             axInx   = 0
             figsize = (16,nRows*6)
 
@@ -334,21 +363,39 @@ def run_edge_detect(
             # Plot Processed Edge
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
-#            xx      = edge_1.index
-#            ax.plot(xx,edge_1)
-#            ax.plot(xx,ffit,ls='--')
 
-            xx      = edge_3.index
-            ax.plot(xx,edge_3,label='Zero-Padded')
+            xx          = edge_4.index
+            ed4_line    = ax.plot(xx,edge_4,label='Filtered')
 
-            xx      = edge_2.index
-            ax.plot(xx,edge_2,label='Hanning Window Detrended')
+            xx          = edge_3.index
+            ed3_line    = ax.plot(xx,edge_3,label='Zero-Padded')
+
+            xx          = edge_2.index
+            ed2_line    = ax.plot(xx,edge_2,label='Hanning Window Detrended')
 
             ax.set_ylabel('Range [km]')
             
             ax.legend(loc='lower right',fontsize='small')
 
             fmt_xaxis(ax,xlim)
+
+            # Plot spectra
+            axInx   = axInx + 1
+            ax      = fig.add_subplot(nRows,nCols,axInx)
+            xx      = edge_3_psd.index
+            color   = ed3_line[0].get_color()
+            ax.plot(xx,edge_3_psd,label='Unfiltered',color=color)
+            ax.set_title('Unfiltered Spectra')
+            fmt_fxaxis(ax)
+
+            axInx   = axInx + 1
+            ax      = fig.add_subplot(nRows,nCols,axInx)
+            xx      = edge_4_psd.index
+            color   = ed4_line[0].get_color()
+            ax.plot(xx,edge_4_psd,label='Filtered',color=color)
+            ax.set_title('Filtered Spectra')
+            fmt_fxaxis(ax)
+
 
             fig.tight_layout()
             if save_plt is not None:
