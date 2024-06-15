@@ -26,6 +26,8 @@ plt.rcParams['axes.xmargin']        = 0
 #plt.rcParams['axes.grid']           = True
 #plt.rcParams['grid.linestyle']      = ':'
 
+cb_pad  = 0.04
+
 parent_dir     = 'data_files'
 label_csv_path = 'official_labels.csv'
 data_out_path  = 'processed_data/full_data.joblib'
@@ -60,6 +62,34 @@ def fmt_fxaxis(ax,flim=None):
 
     ax.set_xticks(xtks)
     ax.set_xticklabels(xtls)
+
+def fmt_fyaxis(ax,flim=None):
+    """
+    Format the frequency y-axis of a spectrum plot.
+    """
+
+    if flim is None:
+        T_lim_1 = datetime.timedelta(minutes=45)
+        flim    = (0,1./T_lim_1.total_seconds())
+
+    ax.set_ylim(flim)
+    ytks    = ax.get_yticks()
+    ytls    = []
+    for etn,ytk in enumerate(ytks):
+        if ytk == 0:
+            T_lbl   = 'Inf'
+            f_lbl   = '{:g}'.format(ytk)
+        else:
+            T_sec   = 1./ytk
+            T_lbl   = '{:0.0f}'.format(T_sec/60.)
+            f_lbl   = '{:g}'.format(ytk*1e3)
+        
+        ytls.append(T_lbl)
+
+    ax.set_yticks(ytks)
+    ax.set_yticklabels(ytls)
+
+    ax.set_ylabel('Period [min]')
 
 def plot_filter_response(sos,fs,Wn=None,
                          db_lim=(-40,1),flim=None,figsize=(18,8),
@@ -172,11 +202,23 @@ def psd_series(series):
     psd         = np.abs(np.fft.fftshift(np.fft.fft(series)*Ts.total_seconds()*2))**2
     ff          = np.fft.fftshift(np.fft.fftfreq(len(series),Ts.total_seconds()))
 
+    psd         = 10*np.log10(psd)
+
     tf          = ff >= 0
     psd         = psd[tf]
     ff          = ff[tf]
     psd_series  = pd.Series(psd,index=ff,name=series.name)
     return psd_series
+
+def adjust_axes(ax_0,ax_1):
+    """
+    Force geospace environment axes to line up with histogram
+    axes even though it doesn't have a color bar.
+    """
+    ax_0_pos    = list(ax_0.get_position().bounds)
+    ax_1_pos    = list(ax_1.get_position().bounds)
+    ax_0_pos[2] = ax_1_pos[2]
+    ax_0.set_position(ax_0_pos)
 
 def run_edge_detect(
     dates,
@@ -331,17 +373,20 @@ def run_edge_detect(
 
         if plot:
             nCols   = 1
-            nRows   = 4
+            nRows   = 6
             axInx   = 0
-            figsize = (16,nRows*6)
+            figsize = (18,nRows*5)
 
             fig     = plt.figure(figsize=figsize)
+            axs     = []
             # Plot Heatmap #########################
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
+            axs.append(ax)
 
             ax.set_title(f'| {date} |')
-            ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
+            mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
+            plt.colorbar(mpbl,label='Radio Spots',aspect=10,pad=cb_pad)
 
             for col in data.columns:
                 if col == 'Time':
@@ -363,6 +408,7 @@ def run_edge_detect(
             # Plot Processed Edge
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
+            axs.append(ax)
 
             xx          = edge_4.index
             ed4_line    = ax.plot(xx,edge_4,label='Filtered')
@@ -379,25 +425,58 @@ def run_edge_detect(
 
             fmt_xaxis(ax,xlim)
 
-            # Plot spectra
+            # Plot Unfiltered Spectra
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
+            axs.append(ax)
+            nperseg   = 512
+            noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
+            f, t, Sxx = signal.spectrogram(edge_3, fs,window='hann',
+                                nperseg=nperseg,noverlap=noverlap)
+            mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
+            plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
+            fmt_xaxis(ax,xlim)
+            fmt_fyaxis(ax)
+
+            axInx   = axInx + 1
+            ax      = fig.add_subplot(nRows,nCols,axInx)
+            axs.append(ax)
             xx      = edge_3_psd.index
             color   = ed3_line[0].get_color()
             ax.plot(xx,edge_3_psd,label='Unfiltered',color=color)
             ax.set_title('Unfiltered Spectra')
             fmt_fxaxis(ax)
 
+            # Plot Filtered Spectra
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
+            axs.append(ax)
+            nperseg   = 512
+            noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
+            f, t, Sxx = signal.spectrogram(edge_4, fs,window='hann',
+                                nperseg=nperseg,noverlap=noverlap)
+            mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
+            plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
+            fmt_xaxis(ax,xlim)
+            fmt_fyaxis(ax)
+
+            axInx   = axInx + 1
+            ax      = fig.add_subplot(nRows,nCols,axInx)
+            axs.append(ax)
             xx      = edge_4_psd.index
             color   = ed4_line[0].get_color()
             ax.plot(xx,edge_4_psd,label='Filtered',color=color)
             ax.set_title('Filtered Spectra')
             fmt_fxaxis(ax)
 
-
             fig.tight_layout()
+
+            # Account for colorbars and line up all axes.
+            for ax_inx, ax in enumerate(axs):
+                if ax_inx == 0:
+                    continue
+                adjust_axes(ax,axs[0])
+
             if save_plt is not None:
                 save_plt(date)
             
