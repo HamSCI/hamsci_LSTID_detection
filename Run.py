@@ -3,6 +3,7 @@
 import os
 import warnings
 import numpy as np
+import numpy.polynomial.polynomial as poly
 import pandas as pd
 import joblib
 import math
@@ -11,6 +12,7 @@ import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+from scipy import signal
 from scipy.ndimage import gaussian_filter
 from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
@@ -29,8 +31,58 @@ label_csv_path = 'official_labels.csv'
 data_out_path  = 'processed_data/full_data.joblib'
 label_out_path = 'labels/labels.joblib'
 
+def plot_filter_response(sos,fs,Wn=None,
+                         db_lim=(-40,1),flim=None,figsize=(10,6),
+						plt_fname='filter.png'):
+    """
+    Plots the magnitude and phase response of a filter.
+    
+    sos:    second-order sections ('sos') array
+    fs:     sample rate
+    Wn:     cutoff frequency(ies)
+    db_lim: ylimits of magnitude response plot
+    flim:   frequency limits of plots
+    """
+    if Wn is not None:
+        # Make sure Wn is an iterable.
+        Wn = np.array(Wn)
+        if Wn.shape == ():
+            Wn.shape = (1,)
+    
+    f, h  = signal.sosfreqz(sos, worN=fs, fs=fs)
+    
+    fig = plt.figure(figsize=figsize)
+    
+    plt.subplot(211)
+    plt.plot(f, 20 * np.log10(abs(h)))
+    # plt.xscale('log')
+    plt.title('Filter Frequency Response')
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Amplitude [dB]')
+    plt.grid(which='both', axis='both')
+    if Wn is not None:
+        for cf in Wn:
+            plt.axvline(cf, color='green') # cutoff frequency
+    plt.xlim(flim)
+    plt.ylim(db_lim)
 
-# In[3]:
+    # plt.ylim(-6,0)
+
+    plt.subplot(212)
+    plt.plot(f, np.unwrap(np.angle(h)))
+    # plt.xscale('log')
+    plt.title('Filter Phase Response')
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Phase [rad]')
+    plt.grid(which='both', axis='both')
+    if Wn is not None:
+        for cf in Wn:
+            plt.axvline(cf, color='green') # cutoff frequency
+    plt.xlim(flim)
+
+    plt.tight_layout()
+    plt.savefig(plt_fname,bbox_inches='tight')
+
 
 tic = datetime.datetime.now()
 if not os.path.exists(data_out_path):
@@ -73,6 +125,12 @@ def scale_km(edge,ranges):
 
     return edge_km
 
+def fmt_xaxis(ax,xlim=None,label=True):
+    ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
+    ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
+    ax.set_xlabel('Time [UTC]')
+    ax.set_xlim(xlim)
+
 def run_edge_detect(
     dates,
     x_trim=.08333,
@@ -113,7 +171,8 @@ def run_edge_detect(
         arr = arr[xr:-xl, yr:-yl]
 
         ranges_km   = arr.coords['height']
-        times       = [date + x for x in pd.to_timedelta(arr.coords['time'])]
+        arr_times       = [date + x for x in pd.to_timedelta(arr.coords['time'])]
+        Ts          = np.mean(np.diff(arr_times))
 
         arr_xr  = arr
         arr     = np.nan_to_num(arr, nan=0)
@@ -132,7 +191,7 @@ def run_edge_detect(
 
         data = pd.DataFrame(
             np.array(med_lines).T,
-            index=times,
+            index=arr_times,
             columns=qs,
         ).reset_index(
             names='Time',
@@ -141,7 +200,7 @@ def run_edge_detect(
         if thresh is None:
             edge_line = pd.DataFrame(
                 min_line, 
-                index=times,
+                index=arr_times,
                 columns=['Height'],
             ).reset_index(
                 names='Time'
@@ -159,41 +218,109 @@ def run_edge_detect(
         else:
             raise ValueError(f'Threshold {thresh} of type {type(thresh)} is invalid')
 
-        final_edge_list.append(
-            pd.Series(min_line.squeeze(), index=times, name=date)
-        )
+        edge_0  = pd.Series(min_line.squeeze(), index=arr_times, name=date)
+        final_edge_list.append(edge_0)
+
+        # X-Limits for plotting
+        x_0     = date + datetime.timedelta(hours=12)
+        x_1     = date + datetime.timedelta(hours=24)
+        xlim    = (x_0, x_1)
+
+        # Window Limits for FFT analysis.
+        win_0   = date + datetime.timedelta(hours=14)
+        win_1   = date + datetime.timedelta(hours=22)
+        winlim  = (win_0, win_1)
+
+        # Select data in analysis window.
+        tf      = np.logical_and(edge_0.index >= win_0, edge_0.index < win_1)
+        edge_1  = edge_0[tf]
+
+        # Detrend and Hanning Window Signal
+        xx      = np.arange(len(edge_1))
+        coefs   = poly.polyfit(xx, edge_1, 1)
+        ffit    = poly.polyval(xx, coefs)
+
+        hann    = np.hanning(len(edge_1))
+        edge_2  = (edge_1 - ffit) * hann
+
+        # Zero-pad and ensure signal is regularly sampled.
+        times_xlim  = [xlim[0]]
+        while times_xlim[-1] < xlim[1]:
+            times_xlim.append(times_xlim[-1] + Ts)
+
+        x_interp    = [x.value for x in times_xlim]
+        xp_interp   = [x.value for x in edge_2.index]
+        interp      = np.interp(x_interp,xp_interp,edge_2.values)
+        edge_3      = pd.Series(interp,index=times_xlim,name=date)
+
+        # Apply band-pass filter.
+        btype = 'high'
+        ws    = 2000 # Band Stop Edge Frequencies
+        wp    = 3000 # Band Pass Edge Frequencies
+
+        gpass =  3 # The maximum loss in the passband (dB).
+        gstop = 40 # The minimum attenuation in the stopband (dB).
+
+        fs = 384000
+        N, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
+        sos   = signal.butter(N, Wn, btype, fs=fs, output='sos')
+
+        flim = (0,10000)
+        filter_fpath = os.path.join(plt_save_path,'filter.png')
+        plot_filter_response(sos,fs,Wn,flim=flim,plt_fname=filter_fpath)
+        import ipdb; ipdb.set_trace()
 
         if plot:
-            fig     = plt.figure(figsize=(16,8))
-            ax      = fig.add_subplot(1,1,1)
+            nCols   = 1
+            nRows   = 2
+            axInx   = 0
+            figsize = (16,nRows*6)
+
+            fig     = plt.figure(figsize=figsize)
+            # Plot Heatmap #########################
+            axInx   = axInx + 1
+            ax      = fig.add_subplot(nRows,nCols,axInx)
 
             ax.set_title(f'| {date} |')
-
-            ax.pcolormesh(times,ranges_km,arr,cmap='plasma')
-            fig.autofmt_xdate()
+            ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
 
             for col in data.columns:
                 if col == 'Time':
                     continue
                 lbl = '{!s}'.format(col)
-                ax.plot(times,data[col],label=lbl)
+                ax.plot(arr_times,data[col],label=lbl)
 
-            ax.plot(times,min_line,lw=2,label='Final Edge')
+            ax.plot(arr_times,min_line,lw=2,label='Final Edge')
 
-            ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
-            ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
-
-            ax.set_xlabel('Time [UTC]')
-            ax.set_ylabel('Range [km]')
-
-            x_0 = date + datetime.timedelta(hours=12)
-            x_1 = date + datetime.timedelta(hours=24)
-            
-            ax.set_xlim(x_0,x_1)
-            ax.set_ylim(0,3000)
+            for wl in winlim:
+                ax.axvline(wl,color='0.8',ls='--',lw=2)
 
             ax.legend(loc='lower right',fontsize='small',ncols=4)
+            fmt_xaxis(ax,xlim)
 
+            ax.set_ylabel('Range [km]')
+            ax.set_ylim(0,3000)
+
+            # Plot Processed Edge
+            axInx   = axInx + 1
+            ax      = fig.add_subplot(nRows,nCols,axInx)
+#            xx      = edge_1.index
+#            ax.plot(xx,edge_1)
+#            ax.plot(xx,ffit,ls='--')
+
+            xx      = edge_3.index
+            ax.plot(xx,edge_3,label='Zero-Padded')
+
+            xx      = edge_2.index
+            ax.plot(xx,edge_2,label='Hanning Window Detrended')
+
+            ax.set_ylabel('Range [km]')
+            
+            ax.legend(loc='lower right',fontsize='small')
+
+            fmt_xaxis(ax,xlim)
+
+            fig.tight_layout()
             if save_plt is not None:
                 save_plt(date)
             
@@ -204,7 +331,7 @@ def run_edge_detect(
     if csv_save_path:
         final_edge_df.to_csv(csv_save_path)
     
-    return {'date':date,'arr':arr,'arr_xr':arr_xr,'final_edge_df':final_edge_df,'data':data,'edge_line':edge_line}
+    return
 
 tic = datetime.datetime.now()
 result = run_edge_detect(
