@@ -570,6 +570,78 @@ def run_edge_detect(
 
     return result
 
+def plot_season_analysis(all_results,output_dir='output'):
+    """
+    Plot the LSTID analysis for the entire season.
+    """
+
+    sDate   = min(all_results.keys())
+    eDate   = max(all_results.keys())
+
+    sDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = sDate.strftime('%Y%m%d')
+    png_fname   = '{!s}-{!s}_seasonAnalysis.png'.format(sDate_str,eDate_str)
+    png_fpath   = os.path.join(output_dir,png_fname)
+
+    # Create parameter dataframe.
+    params = []
+    params.append('004_filtered_Tmax_hr')
+    params.append('004_filtered_PSDdBmax')
+    params.append('004_filtered_intPSD_db')
+
+    df_lst = []
+    df_inx = []
+    for date,results in all_results.items():
+        if results is None:
+            continue
+
+        tmp = {}
+        for param in params:
+            tmp[param] = results[param]
+
+        df_lst.append(tmp)
+        df_inx.append(date)
+
+    df = pd.DataFrame(df_lst,index=df_inx)
+    # Plotting #############################
+    nCols   = 1
+    nRows   = 4
+
+    axInx   = 0
+    figsize = (18,nRows*5)
+
+    fig     = plt.figure(figsize=figsize)
+    axs     = []
+
+    axInx   = axInx + 1
+    ax      = fig.add_subplot(nRows,nCols,axInx)
+    axs.append(ax)
+    for date,results in all_results.items():
+        if results is None:
+            continue
+        psd = results.get('004_filtered_psd')
+        ax.plot(psd.index,psd)
+    fmt_fxaxis(ax) 
+
+    for param in params:
+        axInx   = axInx + 1
+        ax      = fig.add_subplot(nRows,nCols,axInx)
+        axs.append(ax)
+
+        xx = df[param].index
+        yy = df[param]
+        ax.plot(xx,yy,marker='.')
+        ax.set_title(param)
+        ax.set_xlim(sDate,eDate)
+
+    fig.tight_layout()
+
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    print('   Saving: {!s}'.format(png_fpath))
+    fig.savefig(png_fpath,bbox_inches='tight')
+    import ipdb; ipdb.set_trace()
+
 if __name__ == '__main__':
     output_dir  = 'output'
 
@@ -628,5 +700,6 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
+    plot_season_analysis(all_results,output_dir=output_dir)
 
 import ipdb; ipdb.set_trace()
