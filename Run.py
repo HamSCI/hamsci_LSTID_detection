@@ -143,6 +143,7 @@ def plot_filter_response(sos,fs,Wn=None,
         plt.xlim(flim)
 
     plt.tight_layout()
+    print('   Saving: {!s}'.format(plt_fname))
     plt.savefig(plt_fname,bbox_inches='tight')
 
 
@@ -401,6 +402,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     date_str    = date.strftime('%Y%m%d')
     png_fname   = f'{date_str}_curveCombo.png'
     png_fpath   = os.path.join(output_dir,png_fname)
+    print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
     plt.close()
 
@@ -424,6 +426,7 @@ def run_edge_detect(
     pkl_fpath   = os.path.join(cache_dir,pkl_fname)
 
     if os.path.exists(pkl_fpath):
+        print('   LOADING: {!s}'.format(pkl_fpath))
         with open(pkl_fpath,'rb') as fl:
             result = pickle.load(fl)
     else:
@@ -591,15 +594,37 @@ def run_edge_detect(
             os.mkdir(cache_dir)
 
         with open(pkl_fpath,'wb') as fl:
+            print('   PICKLING: {!s}'.format(pkl_fpath))
             pickle.dump(result,fl)
 
     return result
 
 tic = datetime.datetime.now()
-date                = datetime.datetime(2018,11,1)
-plot_filter_path    = os.path.join('output','filter.png')
-result              = run_edge_detect(date,plot_filter_path=plot_filter_path)
-curve_combo_plot(result)
+sDate   = datetime.datetime(2018,11,1)
+eDate   = datetime.datetime(2019,5,1)
+dates   = [sDate]
+while dates[-1] < eDate:
+    dates.append(dates[-1]+datetime.timedelta(days=1))
+
+all_results = {}
+for dinx,date in enumerate(dates):
+    print(date)
+    if dinx == 0:
+        plot_filter_path    = os.path.join('output','filter.png')
+    else:
+        plot_filter_path    = None
+    result              = run_edge_detect(date,plot_filter_path=plot_filter_path)
+    all_results[date] = result
+    curve_combo_plot(result)
+
+sDate_str   = sDate.strftime('%Y%m%d')
+eDate_str   = sDate.strftime('%Y%m%d')
+pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
+pkl_fpath   = os.path.join('cache',pkl_fname)
+with open(pkl_fpath,'wb') as fl:
+    print('PICKLING: {!s}'.format(pkl_fpath))
+    pickle.dump(all_results,fl)
+
 toc = datetime.datetime.now()
 
 print('Processing and plotting time: {!s}'.format(toc-tic))
