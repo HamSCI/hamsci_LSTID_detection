@@ -28,11 +28,8 @@ plt.rcParams['axes.xmargin']        = 0
 #plt.rcParams['axes.grid']           = True
 #plt.rcParams['grid.linestyle']      = ':'
 
-
 parent_dir     = 'data_files'
-label_csv_path = 'official_labels.csv'
 data_out_path  = 'processed_data/full_data.joblib'
-label_out_path = 'labels/labels.joblib'
 
 def fmt_fxaxis(ax,flim=None):
     """
@@ -146,37 +143,6 @@ def plot_filter_response(sos,fs,Wn=None,
     print('   Saving: {!s}'.format(plt_fname))
     plt.savefig(plt_fname,bbox_inches='tight')
 
-
-tic = datetime.datetime.now()
-if not os.path.exists(data_out_path):
-    full_xarr = create_xarr(
-        parent_dir=parent_dir,
-        expected_shape=(720, 300),
-        dtype=(np.uint16, np.float32),
-        apply_fn=mad,
-        plot=False,
-    )
-    joblib.dump(full_xarr, data_out_path)
-
-if not os.path.exists(label_csv_path):
-    label_df = create_label_df(
-        csv_path=label_csv_path,
-    )
-    joblib.dump(label_df, label_out_path)
-
-date_iter = DateIter(data_out_path) #, label_df=label_out_path)
-toc = datetime.datetime.now()
-print('Loading time: {!s}'.format(toc-tic))
-
-def save_wrap(save_dir, fmt='%Y-%m-%d', ext='.png', **kwargs):
-    os.makedirs(save_dir, exist_ok=True)
-    def wrapped(date):
-        date_str = pd.to_datetime(date).strftime(fmt)
-        file_path = os.path.join(save_dir, date_str + ext)
-        plt.savefig(file_path,bbox_inches='tight',**kwargs)
-        return
-    return wrapped
-
 def scale_km(edge,ranges):
     """
     Scale detected edge array indices to kilometers.
@@ -223,7 +189,7 @@ def adjust_axes(ax_0,ax_1):
     ax_0.set_position(ax_0_pos)
 
 def curve_combo_plot(result_dct,cb_pad=0.04,
-                     plot_specgrams=False,output_dir='output'):
+                     plot_specgrams=False,output_dir=os.path.join('output','daily_plots')):
     """
     Make a curve combo stackplot that includes:
         1. Heatmap of Ham Radio Spots
@@ -399,15 +365,15 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
             continue
         adjust_axes(ax,axs[0])
 
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
     date_str    = date.strftime('%Y%m%d')
     png_fname   = f'{date_str}_curveCombo.png'
     png_fpath   = os.path.join(output_dir,png_fname)
     print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
     plt.close()
-
     return
-
 
 def run_edge_detect(
     date,
@@ -430,7 +396,7 @@ def run_edge_detect(
         with open(pkl_fpath,'rb') as fl:
             result = pickle.load(fl)
     else:
-        arr = date_iter.get_date(date)
+        arr = date_iter.get_date(date,raise_missing=False)
 
         if arr is None:
             warnings.warn(f'Date {date} has no input')
@@ -599,34 +565,63 @@ def run_edge_detect(
 
     return result
 
-tic = datetime.datetime.now()
-sDate   = datetime.datetime(2018,11,1)
-eDate   = datetime.datetime(2019,5,1)
-dates   = [sDate]
-while dates[-1] < eDate:
-    dates.append(dates[-1]+datetime.timedelta(days=1))
+if __name__ == '__main__':
+    output_dir  = 'output'
 
-all_results = {}
-for dinx,date in enumerate(dates):
-    print(date)
-    if dinx == 0:
-        plot_filter_path    = os.path.join('output','filter.png')
-    else:
-        plot_filter_path    = None
-    result              = run_edge_detect(date,plot_filter_path=plot_filter_path)
-    all_results[date] = result
-    curve_combo_plot(result)
+    sDate   = datetime.datetime(2018,11,1)
+    eDate   = datetime.datetime(2019,5,1)
 
-sDate_str   = sDate.strftime('%Y%m%d')
-eDate_str   = sDate.strftime('%Y%m%d')
-pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
-pkl_fpath   = os.path.join('cache',pkl_fname)
-with open(pkl_fpath,'wb') as fl:
-    print('PICKLING: {!s}'.format(pkl_fpath))
-    pickle.dump(all_results,fl)
+    tic = datetime.datetime.now()
+    dates   = [sDate]
+    while dates[-1] < eDate:
+        dates.append(dates[-1]+datetime.timedelta(days=1))
 
-toc = datetime.datetime.now()
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
 
-print('Processing and plotting time: {!s}'.format(toc-tic))
+    # Edge Detection ###############################################################
+    sDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = sDate.strftime('%Y%m%d')
+    pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
+    pkl_fpath   = os.path.join('cache',pkl_fname)
+    if os.path.exists(pkl_fpath):
+        with open(pkl_fpath,'rb') as fl:
+            print('LOADING: {!s}'.format(pkl_fpath))
+            all_results = pickle.load(fl)
+    else:    
+        # Load in CSV Histograms ###############
+        if not os.path.exists(data_out_path):
+            full_xarr = create_xarr(
+                parent_dir=parent_dir,
+                expected_shape=(720, 300),
+                dtype=(np.uint16, np.float32),
+                apply_fn=mad,
+                plot=False,
+            )
+            joblib.dump(full_xarr, data_out_path)
+
+        date_iter = DateIter(data_out_path) #, label_df=label_out_path)
+        ########################################
+
+        all_results = {}
+        for dinx,date in enumerate(dates):
+            print(date)
+            if dinx == 0:
+                plot_filter_path    = os.path.join(output_dir,'filter.png')
+            else:
+                plot_filter_path    = None
+            result              = run_edge_detect(date,plot_filter_path=plot_filter_path)
+            all_results[date] = result
+            if result is None: # Missing Data Case
+                continue
+            curve_combo_plot(result)
+
+        with open(pkl_fpath,'wb') as fl:
+            print('PICKLING: {!s}'.format(pkl_fpath))
+            pickle.dump(all_results,fl)
+
+    toc = datetime.datetime.now()
+
+    print('Processing and plotting time: {!s}'.format(toc-tic))
 
 import ipdb; ipdb.set_trace()
