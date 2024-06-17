@@ -265,6 +265,10 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     edge_4      = result_dct.get('004_filtered')
     edge_4_psd  = result_dct.get('004_filtered_psd')
 
+    ed4_Tmax_hr     = result_dct.get('004_filtered_Tmax_hr')
+    ed4_PSDdBmax    = result_dct.get('004_filtered_PSDdBmax')
+    ed4_intPSD_dB   = result_dct.get('004_filtered_intPSD_db')
+
     ranges_km   = arr.coords['ranges_km']
     arr_times   = [pd.Timestamp(x) for x in arr.coords['datetimes'].values]
     Ts          = np.mean(np.diff(arr_times)) # Sampling Period
@@ -372,7 +376,16 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     axs.append(ax)
     xx      = edge_4_psd.index
     color   = ed4_line[0].get_color()
-    ax.plot(xx,edge_4_psd,label='Filtered',color=color)
+    ax.plot(xx,edge_4_psd,color=color)
+
+    txt = []
+    txt.append('$T_{Dominant}$: '+'{:0.1f} hr'.format(ed4_Tmax_hr))
+    txt.append('PSD$_{Dominant}$: '+'{:0.0f} dB'.format(ed4_PSDdBmax))
+    txt.append('$\Sigma$PSD: '+'{:0.0f} dB'.format(ed4_intPSD_dB))
+
+    ax.scatter(1./(3600.*ed4_Tmax_hr),ed4_PSDdBmax,marker='*',s=500,label='\n'.join(txt))
+    ax.legend(loc='lower right')
+
     ax.set_title('Filtered Spectra')
     fmt_fxaxis(ax)
 
@@ -526,6 +539,12 @@ def run_edge_detect(
     edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
     edge_4_psd  = psd_series(edge_4)
 
+    # Calculate summary values of Edge 4.
+    argMax          = edge_4_psd.argmax()
+    ed4_Tmax_hr     = 1./(3600 * edge_4_psd.index[argMax])  # Period in hours of strongest spectral component of filtered signal
+    ed4_PSDdBmax    = edge_4_psd.iloc[argMax]               # dB value of strongest spectral component of filtered signal
+    ed4_intPSD_dB   = np.sum(edge_4_psd)                    # Integrated Power Spectral Density of filtered signal
+
     daDct               = {}
     daDct['data']       = arr
     daDct['coords']     = coords = {}
@@ -544,6 +563,9 @@ def run_edge_detect(
     result['003_zeroPad_PSDdB'] = edge_3_psd
     result['004_filtered']      = edge_4
     result['004_filtered_psd']  = edge_4_psd
+    result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
+    result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
+    result['004_filtered_intPSD_db']    = ed4_intPSD_dB
     result['metaData']  = meta  = {}
     meta['date']        = date
     meta['x_trim']      = x_trim
