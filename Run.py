@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 import numpy.polynomial.polynomial as poly
 import pandas as pd
+import xarray as xr
 import joblib
 import math
 import datetime
@@ -229,7 +230,7 @@ def run_edge_detect(
     occurence_n = 60,
     i_max=30,
     plot=True,
-    clear_every=100,
+    plot_specgrams=False,
     plt_save_path=None,
     csv_save_path=None,
     thresh=None,
@@ -252,12 +253,12 @@ def run_edge_detect(
             warnings.warn(f'Date {date} has no input')
             continue
             
-        xl_trim, xr_trim = x_trim if isinstance(x_trim, (tuple, list)) else (x_trim, x_trim)
+        xl_trim, xrt_trim = x_trim if isinstance(x_trim, (tuple, list)) else (x_trim, x_trim)
         yl_trim, yr_trim = x_trim if isinstance(y_trim, (tuple, list)) else (y_trim, y_trim)
-        xr, xl = math.floor(xl_trim * arr.shape[0]), math.floor(xr_trim * arr.shape[0])
+        xrt, xl = math.floor(xl_trim * arr.shape[0]), math.floor(xrt_trim * arr.shape[0])
         yr, yl = math.floor(yl_trim * arr.shape[1]), math.floor(yr_trim * arr.shape[1])
 
-        arr = arr[xr:-xl, yr:-yl]
+        arr = arr[xrt:-xl, yr:-yl]
 
         ranges_km   = arr.coords['height']
         arr_times   = [date + x for x in pd.to_timedelta(arr.coords['time'])]
@@ -371,9 +372,38 @@ def run_edge_detect(
         edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
         edge_4_psd  = psd_series(edge_4)
 
+        daDct               = {}
+        daDct['data']       = arr
+        daDct['coords']     = coords = {}
+        coords['ranges_km'] = ranges_km.values
+        coords['datetimes'] = arr_times
+        spotArr             = xr.DataArray(**daDct)
+
+        # Set things up for data file.
+        result  = {}
+        result['spotArr']           = spotArr
+        result['000_detectedEdge']  = edge_0
+        result['001_windowLimits']  = edge_1
+        result['002_hanningDetrend']= edge_2
+        result['003_zeroPad']       = edge_3
+        result['003_zeroPad_PSDdB'] = edge_3_psd
+        result['004_filtered']      = edge_4
+        result['004_filtered_psd']  = edge_4_psd
+        result['metaData']  = meta  = {}
+        meta['date']        = date
+        meta['x_trim']      = x_trim
+        meta['y_trim']      = y_trim
+        meta['sigma']       = sigma
+        meta['qs']          = qs
+        meta['occurence_n'] = occurence_n
+        meta['i_max']       = i_max
+
         if plot:
             nCols   = 1
-            nRows   = 6
+            nRows   = 4
+            if plot_specgrams:
+                nRows += 2
+
             axInx   = 0
             figsize = (18,nRows*5)
 
@@ -426,17 +456,22 @@ def run_edge_detect(
             fmt_xaxis(ax,xlim)
 
             # Plot Unfiltered Spectra
-            axInx   = axInx + 1
-            ax      = fig.add_subplot(nRows,nCols,axInx)
-            axs.append(ax)
-            nperseg   = 512
-            noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
-            f, t, Sxx = signal.spectrogram(edge_3, fs,window='hann',
-                                nperseg=nperseg,noverlap=noverlap)
-            mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
-            plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
-            fmt_xaxis(ax,xlim)
-            fmt_fyaxis(ax)
+            if plot_specgrams:
+                axInx   = axInx + 1
+                ax      = fig.add_subplot(nRows,nCols,axInx)
+                axs.append(ax)
+    #            f, t, Sxx = ss.spectrogram(smooth_arr_1, fs, nperseg = 128,noverlap= 64, window=('tukey',0.1) )
+    #            f_2, t_2, Sxx_2 = ss.spectrogram(smooth_arr_1, fs, nperseg = 512,noverlap= 1, window=('tukey',0.1) )
+
+                nperseg   = 512
+                noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
+
+                f, t, Sxx = signal.spectrogram(edge_3, fs,window='hann',
+                                    nperseg=nperseg,noverlap=noverlap)
+                mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
+                plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
+                fmt_xaxis(ax,xlim)
+                fmt_fyaxis(ax)
 
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
@@ -448,17 +483,18 @@ def run_edge_detect(
             fmt_fxaxis(ax)
 
             # Plot Filtered Spectra
-            axInx   = axInx + 1
-            ax      = fig.add_subplot(nRows,nCols,axInx)
-            axs.append(ax)
-            nperseg   = 512
-            noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
-            f, t, Sxx = signal.spectrogram(edge_4, fs,window='hann',
-                                nperseg=nperseg,noverlap=noverlap)
-            mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
-            plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
-            fmt_xaxis(ax,xlim)
-            fmt_fyaxis(ax)
+            if plot_specgrams:
+                axInx   = axInx + 1
+                ax      = fig.add_subplot(nRows,nCols,axInx)
+                axs.append(ax)
+                nperseg   = 512
+                noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
+                f, t, Sxx = signal.spectrogram(edge_4, fs,window='hann',
+                                    nperseg=nperseg,noverlap=noverlap)
+                mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
+                plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
+                fmt_xaxis(ax,xlim)
+                fmt_fyaxis(ax)
 
             axInx   = axInx + 1
             ax      = fig.add_subplot(nRows,nCols,axInx)
