@@ -20,6 +20,8 @@ from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
 
+import lstid_ham
+
 plt.rcParams['font.size']           = 18
 plt.rcParams['font.weight']         = 'bold'
 plt.rcParams['axes.titleweight']    = 'bold'
@@ -604,18 +606,16 @@ def plot_season_analysis(all_results,output_dir='output'):
 
     df = pd.DataFrame(df_lst,index=df_inx)
     # Plotting #############################
-    nCols   = 1
+    nCols   = 3
     nRows   = 4
 
     axInx   = 0
-    figsize = (18,nRows*5)
+    figsize = (25,nRows*5)
 
+    gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
     fig     = plt.figure(figsize=figsize)
-    axs     = []
 
-    axInx   = axInx + 1
-    ax      = fig.add_subplot(nRows,nCols,axInx)
-    axs.append(ax)
+    ax  = fig.add_subplot(gs[0,:2])
     for date,results in all_results.items():
         if results is None:
             continue
@@ -623,16 +623,39 @@ def plot_season_analysis(all_results,output_dir='output'):
         ax.plot(psd.index,psd)
     fmt_fxaxis(ax) 
 
-    for param in params:
-        axInx   = axInx + 1
-        ax      = fig.add_subplot(nRows,nCols,axInx)
-        axs.append(ax)
+    # Load in Mary Lou West's Manual LSTID Analysis
+    lstid_mlw   = lstid_ham.LSTID_HAM()
+    df_mlw      = lstid_mlw.df.copy()
+    df_mlw      = df_mlw.set_index('date')
 
-        xx = df[param].index
-        yy = df[param]
-        ax.plot(xx,yy,marker='.')
-        ax.set_title(param)
-        ax.set_xlim(sDate,eDate)
+    # Combine FFT and MLW analysis dataframes.
+    dfc = pd.concat([df,df_mlw],axis=1)
+
+    # Compare parameters - List of (df, lstid_mlw) keys to compare.
+    cmps = []
+    cmps.append( ('004_filtered_Tmax_hr',   'period_hr') )
+    cmps.append( ('004_filtered_PSDdBmax',  'tid_hours') )
+    cmps.append( ('004_filtered_intPSD_db', 'tid_hours') )
+
+    for pinx,(key_0,key_1) in enumerate(cmps):
+        rinx    = pinx + 1
+        ax0     = fig.add_subplot(gs[rinx,:2])
+
+        p0  = dfc[key_0]
+        p1  = dfc[key_1]
+
+        ax0.plot(p0.index,p0,marker='.')
+        ax0.set_ylabel(key_0)
+        ax0.set_xlim(sDate,eDate)
+
+        ax0r    = ax0.twinx()
+        ax0r.plot(p1.index,p1,marker='.')
+        ax0r.set_ylabel(key_1)
+
+        ax1   = fig.add_subplot(gs[rinx,2])
+        ax1.scatter(p0,p1)
+        ax1.set_xlabel(key_0)
+        ax1.set_ylabel(key_1)
 
     fig.tight_layout()
 
