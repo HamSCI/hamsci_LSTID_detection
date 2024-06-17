@@ -202,6 +202,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
         result_dct should have the following structure:
             result  = {}
             result['spotArr']           = spotArr
+            result['med_lines']         = med_lines
             result['000_detectedEdge']  = edge_0
             result['001_windowLimits']  = edge_1
             result['002_hanningDetrend']= edge_2
@@ -209,6 +210,9 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
             result['003_zeroPad_PSDdB'] = edge_3_psd
             result['004_filtered']      = edge_4
             result['004_filtered_psd']  = edge_4_psd
+            result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
+            result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
+            result['004_filtered_intPSD_db']    = ed4_intPSD_dB
             result['metaData']  = meta  = {}
             meta['date']        = date
             meta['x_trim']      = x_trim
@@ -217,7 +221,8 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
             meta['qs']          = qs
             meta['occurence_n'] = occurence_n
             meta['i_max']       = i_max
-
+            meta['xlim']        = xlim
+            meta['winlim']      = winlim # Datetime limits used for data selection and Hanning window.
     """
     md          = result_dct.get('metaData')
     date        = md.get('date')
