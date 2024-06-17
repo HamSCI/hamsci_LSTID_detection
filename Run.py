@@ -2,6 +2,7 @@
 # coding: utf-8
 import os
 import warnings
+import pickle
 import numpy as np
 import numpy.polynomial.polynomial as poly
 import pandas as pd
@@ -415,167 +416,182 @@ def run_edge_detect(
     occurence_n = 60,
     i_max=30,
     thresh=None,
-    plot_filter_path=None):
+    plot_filter_path=None,
+    cache_dir='cache'):
 
-    arr = date_iter.get_date(date)
+    date_str    = date.strftime('%Y%m%d')
+    pkl_fname   = f'{date_str}_edgeDetect.pkl'
+    pkl_fpath   = os.path.join(cache_dir,pkl_fname)
 
-    if arr is None:
-        warnings.warn(f'Date {date} has no input')
-        return
-        
-    xl_trim, xrt_trim   = x_trim if isinstance(x_trim, (tuple, list)) else (x_trim, x_trim)
-    yl_trim, yr_trim    = x_trim if isinstance(y_trim, (tuple, list)) else (y_trim, y_trim)
-    xrt, xl = math.floor(xl_trim * arr.shape[0]), math.floor(xrt_trim * arr.shape[0])
-    yr, yl  = math.floor(yl_trim * arr.shape[1]), math.floor(yr_trim * arr.shape[1])
-
-    arr = arr[xrt:-xl, yr:-yl]
-
-    ranges_km   = arr.coords['height']
-    arr_times   = [date + x for x in pd.to_timedelta(arr.coords['time'])]
-    Ts          = np.mean(np.diff(arr_times)) # Sampling Period
-
-    arr_xr  = arr
-    arr     = np.nan_to_num(arr, nan=0)
-
-    arr = gaussian_filter(arr.T, sigma=(sigma, sigma))  # [::-1,:]
-    med_lines, min_line, minz_line = measure_thresholds(
-        arr,
-        qs=qs, 
-        occurrence_n=occurence_n, 
-        i_max=i_max
-    )
-
-    med_lines   = [scale_km(x,ranges_km) for x in med_lines]
-    min_line    = scale_km(min_line,ranges_km)
-    minz_line   = scale_km(minz_line,ranges_km)
-
-    med_lines   = pd.DataFrame(
-        np.array(med_lines).T,
-        index=arr_times,
-        columns=qs,
-    ).reset_index(names='Time')
-
-    if thresh is None:
-        edge_line = pd.DataFrame(
-            min_line, 
-            index=arr_times,
-            columns=['Height'],
-        ).reset_index(
-            names='Time'
-        )
-    elif isinstance(thresh, dict):
-        edge_line = (
-            med_lines[['Time', thresh[date]]]
-            .rename(columns={thresh[date] : 'Height'})
-        )
-    elif isinstance(thresh, float):
-        edge_line = (
-            med_lines[['Time', thresh]]
-            .rename(columns={thresh : 'Height'})
-        )
+    if os.path.exists(pkl_fpath):
+        with open(pkl_fpath,'rb') as fl:
+            result = pickle.load(fl)
     else:
-        raise ValueError(f'Threshold {thresh} of type {type(thresh)} is invalid')
+        arr = date_iter.get_date(date)
 
-    edge_0  = pd.Series(min_line.squeeze(), index=arr_times, name=date)
+        if arr is None:
+            warnings.warn(f'Date {date} has no input')
+            return
+            
+        xl_trim, xrt_trim   = x_trim if isinstance(x_trim, (tuple, list)) else (x_trim, x_trim)
+        yl_trim, yr_trim    = x_trim if isinstance(y_trim, (tuple, list)) else (y_trim, y_trim)
+        xrt, xl = math.floor(xl_trim * arr.shape[0]), math.floor(xrt_trim * arr.shape[0])
+        yr, yl  = math.floor(yl_trim * arr.shape[1]), math.floor(yr_trim * arr.shape[1])
 
-    # X-Limits for plotting
-    x_0     = date + datetime.timedelta(hours=12)
-    x_1     = date + datetime.timedelta(hours=24)
-    xlim    = (x_0, x_1)
+        arr = arr[xrt:-xl, yr:-yl]
 
-    # Window Limits for FFT analysis.
-    win_0   = date + datetime.timedelta(hours=14)
-    win_1   = date + datetime.timedelta(hours=22)
-    winlim  = (win_0, win_1)
+        ranges_km   = arr.coords['height']
+        arr_times   = [date + x for x in pd.to_timedelta(arr.coords['time'])]
+        Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
-    # Select data in analysis window.
-    tf      = np.logical_and(edge_0.index >= win_0, edge_0.index < win_1)
-    edge_1  = edge_0[tf]
+        arr_xr  = arr
+        arr     = np.nan_to_num(arr, nan=0)
 
-    # Detrend and Hanning Window Signal
-    xx      = np.arange(len(edge_1))
-    coefs   = poly.polyfit(xx, edge_1, 1)
-    ffit    = poly.polyval(xx, coefs)
+        arr = gaussian_filter(arr.T, sigma=(sigma, sigma))  # [::-1,:]
+        med_lines, min_line, minz_line = measure_thresholds(
+            arr,
+            qs=qs, 
+            occurrence_n=occurence_n, 
+            i_max=i_max
+        )
 
-    hann    = np.hanning(len(edge_1))
-    edge_2  = (edge_1 - ffit) * hann
+        med_lines   = [scale_km(x,ranges_km) for x in med_lines]
+        min_line    = scale_km(min_line,ranges_km)
+        minz_line   = scale_km(minz_line,ranges_km)
 
-    # Zero-pad and ensure signal is regularly sampled.
-    times_xlim  = [xlim[0]]
-    while times_xlim[-1] < xlim[1]:
-        times_xlim.append(times_xlim[-1] + Ts)
+        med_lines   = pd.DataFrame(
+            np.array(med_lines).T,
+            index=arr_times,
+            columns=qs,
+        ).reset_index(names='Time')
 
-    x_interp    = [pd.Timestamp(x).value for x in times_xlim]
-    xp_interp   = [pd.Timestamp(x).value for x in edge_2.index]
-    interp      = np.interp(x_interp,xp_interp,edge_2.values)
-    edge_3      = pd.Series(interp,index=times_xlim,name=date)
-    
-    edge_3_psd  = psd_series(edge_3)
+        if thresh is None:
+            edge_line = pd.DataFrame(
+                min_line, 
+                index=arr_times,
+                columns=['Height'],
+            ).reset_index(
+                names='Time'
+            )
+        elif isinstance(thresh, dict):
+            edge_line = (
+                med_lines[['Time', thresh[date]]]
+                .rename(columns={thresh[date] : 'Height'})
+            )
+        elif isinstance(thresh, float):
+            edge_line = (
+                med_lines[['Time', thresh]]
+                .rename(columns={thresh : 'Height'})
+            )
+        else:
+            raise ValueError(f'Threshold {thresh} of type {type(thresh)} is invalid')
 
-    # Design and apply band-pass filter.
-    btype   = 'band'
-    bp_T0   = datetime.timedelta(hours=1)
-    bp_T1   = datetime.timedelta(hours=3)
-    bp_dt   = datetime.timedelta(minutes=15)
+        edge_0  = pd.Series(min_line.squeeze(), index=arr_times, name=date)
 
-    # Band Pass Edge Periods
-    wp_td   = [bp_T1, bp_T0]
-    # Band Stop Edge Periods
-    ws_td   = [bp_T1-bp_dt, bp_T0+bp_dt]
+        # X-Limits for plotting
+        x_0     = date + datetime.timedelta(hours=12)
+        x_1     = date + datetime.timedelta(hours=24)
+        xlim    = (x_0, x_1)
 
-    gpass =  3 # The maximum loss in the passband (dB).
-    gstop = 40 # The minimum attenuation in the stopband (dB).
+        # Window Limits for FFT analysis.
+        win_0   = date + datetime.timedelta(hours=14)
+        win_1   = date + datetime.timedelta(hours=22)
+        winlim  = (win_0, win_1)
 
-    fs      = 1./Ts.total_seconds()
-    ws      = [1./x.total_seconds() for x in ws_td]
-    wp      = [1./x.total_seconds() for x in wp_td]
-    N_filt, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
-    sos     = signal.butter(N_filt, Wn, btype, fs=fs, output='sos')
-    
-    if plot_filter_path:
-        plot_filter_response(sos,fs,Wn,plt_fname=plot_filter_path)
+        # Select data in analysis window.
+        tf      = np.logical_and(edge_0.index >= win_0, edge_0.index < win_1)
+        edge_1  = edge_0[tf]
 
-    edge_4      = edge_3.copy()
-    edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
-    edge_4_psd  = psd_series(edge_4)
+        # Detrend and Hanning Window Signal
+        xx      = np.arange(len(edge_1))
+        coefs   = poly.polyfit(xx, edge_1, 1)
+        ffit    = poly.polyval(xx, coefs)
 
-    # Calculate summary values of Edge 4.
-    argMax          = edge_4_psd.argmax()
-    ed4_Tmax_hr     = 1./(3600 * edge_4_psd.index[argMax])  # Period in hours of strongest spectral component of filtered signal
-    ed4_PSDdBmax    = edge_4_psd.iloc[argMax]               # dB value of strongest spectral component of filtered signal
-    ed4_intPSD_dB   = np.sum(edge_4_psd)                    # Integrated Power Spectral Density of filtered signal
+        hann    = np.hanning(len(edge_1))
+        edge_2  = (edge_1 - ffit) * hann
 
-    daDct               = {}
-    daDct['data']       = arr
-    daDct['coords']     = coords = {}
-    coords['ranges_km'] = ranges_km.values
-    coords['datetimes'] = arr_times
-    spotArr             = xr.DataArray(**daDct)
+        # Zero-pad and ensure signal is regularly sampled.
+        times_xlim  = [xlim[0]]
+        while times_xlim[-1] < xlim[1]:
+            times_xlim.append(times_xlim[-1] + Ts)
 
-    # Set things up for data file.
-    result  = {}
-    result['spotArr']           = spotArr
-    result['med_lines']         = med_lines
-    result['000_detectedEdge']  = edge_0
-    result['001_windowLimits']  = edge_1
-    result['002_hanningDetrend']= edge_2
-    result['003_zeroPad']       = edge_3
-    result['003_zeroPad_PSDdB'] = edge_3_psd
-    result['004_filtered']      = edge_4
-    result['004_filtered_psd']  = edge_4_psd
-    result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
-    result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
-    result['004_filtered_intPSD_db']    = ed4_intPSD_dB
-    result['metaData']  = meta  = {}
-    meta['date']        = date
-    meta['x_trim']      = x_trim
-    meta['y_trim']      = y_trim
-    meta['sigma']       = sigma
-    meta['qs']          = qs
-    meta['occurence_n'] = occurence_n
-    meta['i_max']       = i_max
-    meta['xlim']        = xlim
-    meta['winlim']      = winlim
+        x_interp    = [pd.Timestamp(x).value for x in times_xlim]
+        xp_interp   = [pd.Timestamp(x).value for x in edge_2.index]
+        interp      = np.interp(x_interp,xp_interp,edge_2.values)
+        edge_3      = pd.Series(interp,index=times_xlim,name=date)
+        
+        edge_3_psd  = psd_series(edge_3)
+
+        # Design and apply band-pass filter.
+        btype   = 'band'
+        bp_T0   = datetime.timedelta(hours=1)
+        bp_T1   = datetime.timedelta(hours=3)
+        bp_dt   = datetime.timedelta(minutes=15)
+
+        # Band Pass Edge Periods
+        wp_td   = [bp_T1, bp_T0]
+        # Band Stop Edge Periods
+        ws_td   = [bp_T1-bp_dt, bp_T0+bp_dt]
+
+        gpass =  3 # The maximum loss in the passband (dB).
+        gstop = 40 # The minimum attenuation in the stopband (dB).
+
+        fs      = 1./Ts.total_seconds()
+        ws      = [1./x.total_seconds() for x in ws_td]
+        wp      = [1./x.total_seconds() for x in wp_td]
+        N_filt, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
+        sos     = signal.butter(N_filt, Wn, btype, fs=fs, output='sos')
+        
+        if plot_filter_path:
+            plot_filter_response(sos,fs,Wn,plt_fname=plot_filter_path)
+
+        edge_4      = edge_3.copy()
+        edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
+        edge_4_psd  = psd_series(edge_4)
+
+        # Calculate summary values of Edge 4.
+        argMax          = edge_4_psd.argmax()
+        ed4_Tmax_hr     = 1./(3600 * edge_4_psd.index[argMax])  # Period in hours of strongest spectral component of filtered signal
+        ed4_PSDdBmax    = edge_4_psd.iloc[argMax]               # dB value of strongest spectral component of filtered signal
+        ed4_intPSD_dB   = np.sum(edge_4_psd)                    # Integrated Power Spectral Density of filtered signal
+
+        daDct               = {}
+        daDct['data']       = arr
+        daDct['coords']     = coords = {}
+        coords['ranges_km'] = ranges_km.values
+        coords['datetimes'] = arr_times
+        spotArr             = xr.DataArray(**daDct)
+
+        # Set things up for data file.
+        result  = {}
+        result['spotArr']           = spotArr
+        result['med_lines']         = med_lines
+        result['000_detectedEdge']  = edge_0
+        result['001_windowLimits']  = edge_1
+        result['002_hanningDetrend']= edge_2
+        result['003_zeroPad']       = edge_3
+        result['003_zeroPad_PSDdB'] = edge_3_psd
+        result['004_filtered']      = edge_4
+        result['004_filtered_psd']  = edge_4_psd
+        result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
+        result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
+        result['004_filtered_intPSD_db']    = ed4_intPSD_dB
+        result['metaData']  = meta  = {}
+        meta['date']        = date
+        meta['x_trim']      = x_trim
+        meta['y_trim']      = y_trim
+        meta['sigma']       = sigma
+        meta['qs']          = qs
+        meta['occurence_n'] = occurence_n
+        meta['i_max']       = i_max
+        meta['xlim']        = xlim
+        meta['winlim']      = winlim
+
+        if not os.path.exists(cache_dir):
+            os.mkdir(cache_dir)
+
+        with open(pkl_fpath,'wb') as fl:
+            pickle.dump(result,fl)
 
     return result
 
