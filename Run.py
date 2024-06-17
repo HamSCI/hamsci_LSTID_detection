@@ -616,11 +616,27 @@ def plot_season_analysis(all_results,output_dir='output'):
     fig     = plt.figure(figsize=figsize)
 
     ax  = fig.add_subplot(gs[0,:2])
+
+    ckey = '004_filtered_intPSD_db'
+
+    cmap = mpl.cm.cool
+    vmin =  5000
+    vmax = 25000
+    norm = mpl.colors.Normalize(vmin=vmin,vmax=vmax)
+    pos = list(ax.get_position().bounds)
+    pos[0] = 0.675
+    pos[1] = pos[1] + pos[3]/2.
+    pos[2] = 0.025
+#    rect : tuple (left, bottom, width, height)
+    cax = fig.add_axes(pos)
+    cbl  = mpl.colorbar.ColorbarBase(cax,cmap=cmap,norm=norm)
+    cbl.set_label(ckey)
     for date,results in all_results.items():
         if results is None:
             continue
         psd = results.get('004_filtered_psd')
-        ax.plot(psd.index,psd)
+        color   = cmap(norm(results[ckey]))
+        ax.plot(psd.index,psd,color=color)
     fmt_fxaxis(ax) 
 
     # Load in Mary Lou West's Manual LSTID Analysis
@@ -644,13 +660,20 @@ def plot_season_analysis(all_results,output_dir='output'):
         p0  = dfc[key_0]
         p1  = dfc[key_1]
 
-        ax0.plot(p0.index,p0,marker='.')
+#        ax0.plot(p0.index,p0,marker='.')
+        hndls   = []
+        hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='FFT')
+        hndls.append(hndl)
         ax0.set_ylabel(key_0)
         ax0.set_xlim(sDate,eDate)
 
         ax0r    = ax0.twinx()
-        ax0r.plot(p1.index,p1,marker='.')
+#        ax0r.plot(p1.index,p1,marker='.')
+        hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label='MLW')
+        hndls.append(hndl)
         ax0r.set_ylabel(key_1)
+
+        ax0r.legend(handles=hndls,loc='lower right')
 
         ax1   = fig.add_subplot(gs[rinx,2])
         ax1.scatter(p0,p1)
