@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 import os
+import shutil
 import warnings
 import pickle
 import numpy as np
@@ -234,6 +235,8 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     arr         = result_dct.get('spotArr')
     med_lines   = result_dct.get('med_lines')
     edge_0      = result_dct.get('000_detectedEdge')
+    edge_1      = result_dct.get('001_windowLimits')
+    coefs       = result_dct.get('001_polyFitCoefs')
     edge_2      = result_dct.get('002_hanningDetrend')
     edge_3      = result_dct.get('003_zeroPad')
     edge_3_psd  = result_dct.get('003_zeroPad_PSDdB')
@@ -249,9 +252,9 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
     nCols   = 1
-    nRows   = 4
+    nRows   = 3
     if plot_specgrams:
-        nRows += 2
+        nRows += 1
 
     axInx   = 0
     figsize = (18,nRows*5)
@@ -268,13 +271,25 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
     plt.colorbar(mpbl,label='Radio Spots',aspect=10,pad=cb_pad)
 
-    for col in med_lines.columns:
-        if col == 'Time':
-            continue
-        lbl = '{!s}'.format(col)
-        ax.plot(arr_times,med_lines[col],label=lbl)
+#    for col in med_lines.columns:
+#        if col == 'Time':
+#            continue
+#        lbl = '{!s}'.format(col)
+#        ax.plot(arr_times,med_lines[col],label=lbl)
 
-    ax.plot(arr_times,edge_0,lw=2,label='Final Edge')
+    # Overlay filtered line on top of heatmap.
+    # We need to add the detrend back to get the filtered line back to
+    # its original location. We can re-calculate the trendline with the
+    # orginal coeffs determined from edge_1, but applying to the time 
+    # series from edge 4. Since this was determined using integer indices,
+    # we need to convert edge_4.index times into indices that match
+    # edge_1.index.
+    inx_0   = np.argmin(np.abs(edge_4.index - edge_1.index.min()))
+    xx      = np.arange(len(edge_4)) - inx_0
+    ffit    = poly.polyval(xx, coefs)
+
+    ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
+    ax.plot(edge_4.index,edge_4+ffit,lw=2,label='Filtered Edge')
 
     for wl in winlim:
         ax.axvline(wl,color='0.8',ls='--',lw=2)
@@ -305,32 +320,32 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
 
     fmt_xaxis(ax,xlim)
 
-    # Plot Unfiltered Spectra
-    if plot_specgrams:
-        axInx   = axInx + 1
-        ax      = fig.add_subplot(nRows,nCols,axInx)
-        axs.append(ax)
-#            f, t, Sxx = ss.spectrogram(smooth_arr_1, fs, nperseg = 128,noverlap= 64, window=('tukey',0.1) )
-#            f_2, t_2, Sxx_2 = ss.spectrogram(smooth_arr_1, fs, nperseg = 512,noverlap= 1, window=('tukey',0.1) )
-
-        nperseg   = 512
-        noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
-
-        f, t, Sxx = signal.spectrogram(edge_3, fs,window='hann',
-                            nperseg=nperseg,noverlap=noverlap)
-        mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
-        plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
-        fmt_xaxis(ax,xlim)
-        fmt_fyaxis(ax)
-
-    axInx   = axInx + 1
-    ax      = fig.add_subplot(nRows,nCols,axInx)
-    axs.append(ax)
-    xx      = edge_3_psd.index
-    color   = ed3_line[0].get_color()
-    ax.plot(xx,edge_3_psd,label='Unfiltered',color=color)
-    ax.set_title('Unfiltered Spectra')
-    fmt_fxaxis(ax)
+#    # Plot Unfiltered Spectra
+#    if plot_specgrams:
+#        axInx   = axInx + 1
+#        ax      = fig.add_subplot(nRows,nCols,axInx)
+#        axs.append(ax)
+##            f, t, Sxx = ss.spectrogram(smooth_arr_1, fs, nperseg = 128,noverlap= 64, window=('tukey',0.1) )
+##            f_2, t_2, Sxx_2 = ss.spectrogram(smooth_arr_1, fs, nperseg = 512,noverlap= 1, window=('tukey',0.1) )
+#
+#        nperseg   = 512
+#        noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
+#
+#        f, t, Sxx = signal.spectrogram(edge_3, fs,window='hann',
+#                            nperseg=nperseg,noverlap=noverlap)
+#        mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
+#        plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
+#        fmt_xaxis(ax,xlim)
+#        fmt_fyaxis(ax)
+#
+#    axInx   = axInx + 1
+#    ax      = fig.add_subplot(nRows,nCols,axInx)
+#    axs.append(ax)
+#    xx      = edge_3_psd.index
+#    color   = ed3_line[0].get_color()
+#    ax.plot(xx,edge_3_psd,label='Unfiltered',color=color)
+#    ax.set_title('Unfiltered Spectra')
+#    fmt_fxaxis(ax)
 
     # Plot Filtered Spectra
     if plot_specgrams:
@@ -349,9 +364,12 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     axInx   = axInx + 1
     ax      = fig.add_subplot(nRows,nCols,axInx)
     axs.append(ax)
+    color   = ed3_line[0].get_color()
+    ax.plot(edge_3_psd.index,edge_3_psd,color=color,ls=':')
+
     xx      = edge_4_psd.index
     color   = ed4_line[0].get_color()
-    ax.plot(xx,edge_4_psd,color=color)
+    ax.plot(xx,edge_4_psd,color=color,marker='.')
 
     txt = []
     txt.append('$T_{Dominant}$: '+'{:0.1f} hr'.format(ed4_Tmax_hr))
@@ -361,7 +379,8 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     ax.scatter(1./(3600.*ed4_Tmax_hr),ed4_PSDdBmax,marker='*',s=500,label='\n'.join(txt))
     ax.legend(loc='lower right')
 
-    ax.set_title('Filtered Spectra')
+    ax.set_title('Spectrum')
+    ax.set_ylabel('PSD [dB]')
     fmt_fxaxis(ax)
 
     fig.tight_layout()
@@ -487,34 +506,55 @@ def run_edge_detect(
         edge_2  = (edge_1 - ffit) * hann
 
         # Zero-pad and ensure signal is regularly sampled.
-        times_xlim  = [xlim[0]]
-        while times_xlim[-1] < xlim[1]:
-            times_xlim.append(times_xlim[-1] + Ts)
+        zp_0     = x_0 - datetime.timedelta(hours=48)
+        zp_1     = x_1 + datetime.timedelta(hours=48)
+        zplim   = (zp_0,zp_1)
 
-        x_interp    = [pd.Timestamp(x).value for x in times_xlim]
+        times_zplim  = [zplim[0]]
+        while times_zplim[-1] < zplim[1]:
+            times_zplim.append(times_zplim[-1] + Ts)
+
+        x_interp    = [pd.Timestamp(x).value for x in times_zplim]
         xp_interp   = [pd.Timestamp(x).value for x in edge_2.index]
         interp      = np.interp(x_interp,xp_interp,edge_2.values)
-        edge_3      = pd.Series(interp,index=times_xlim,name=date)
+        edge_3      = pd.Series(interp,index=times_zplim,name=date)
         
         edge_3_psd  = psd_series(edge_3)
 
         # Design and apply band-pass filter.
         btype   = 'band'
-        bp_T0   = datetime.timedelta(hours=1)
-        bp_T1   = datetime.timedelta(hours=3)
-        bp_dt   = datetime.timedelta(minutes=15)
+        if btype == 'band':
+            bp_T0   = datetime.timedelta(hours=1)
+            bp_T1   = datetime.timedelta(hours=6)
+            bp_dt   = datetime.timedelta(minutes=30)
+            gpass =  3 # The maximum loss in the passband (dB).
+            gstop = 40 # The minimum attenuation in the stopband (dB).
 
-        # Band Pass Edge Periods
-        wp_td   = [bp_T1, bp_T0]
-        # Band Stop Edge Periods
-        ws_td   = [bp_T1-bp_dt, bp_T0+bp_dt]
+            # Band Pass Edge Periods
+            wp_td   = [bp_T1, bp_T0]
+            # Band Stop Edge Periods
+            ws_td   = [bp_T1-bp_dt, bp_T0+bp_dt]
 
-        gpass =  3 # The maximum loss in the passband (dB).
-        gstop = 40 # The minimum attenuation in the stopband (dB).
 
-        fs      = 1./Ts.total_seconds()
-        ws      = [1./x.total_seconds() for x in ws_td]
-        wp      = [1./x.total_seconds() for x in wp_td]
+            fs      = 1./Ts.total_seconds()
+            ws      = [1./x.total_seconds() for x in ws_td]
+            wp      = [1./x.total_seconds() for x in wp_td]
+        elif btype == 'low':    
+#            btype   = 'low'
+            bp_T0   = datetime.timedelta(hours=1)
+            bp_dt   = datetime.timedelta(minutes=15)
+            gpass   =  3 # The maximum loss in the passband (dB).
+            gstop   = 40 # The minimum attenuation in the stopband (dB).
+
+            # Band Pass Edge Periods
+            wp_td   = [bp_T0]
+            # Band Stop Edge Periods
+            ws_td   = [bp_T0+bp_dt]
+
+            fs      =  1./Ts.total_seconds()
+            ws      = [1./x.total_seconds() for x in ws_td]
+            wp      = [1./x.total_seconds() for x in wp_td]
+
         N_filt, Wn = signal.buttord(wp, ws, gpass, gstop, fs=fs)
         sos     = signal.butter(N_filt, Wn, btype, fs=fs, output='sos')
         
@@ -544,6 +584,7 @@ def run_edge_detect(
         result['med_lines']         = med_lines
         result['000_detectedEdge']  = edge_0
         result['001_windowLimits']  = edge_1
+        result['001_polyFitCoefs']  = coefs
         result['002_hanningDetrend']= edge_2
         result['003_zeroPad']       = edge_3
         result['003_zeroPad_PSDdB'] = edge_3_psd
@@ -690,9 +731,21 @@ def plot_season_analysis(all_results,output_dir='output'):
 
 if __name__ == '__main__':
     output_dir  = 'output'
+    cache_dir   = 'cache'
+    clear_cache = True
 
-    sDate   = datetime.datetime(2018,11,1)
-    eDate   = datetime.datetime(2019,5,1)
+#    sDate   = datetime.datetime(2018,11,1)
+#    eDate   = datetime.datetime(2019,5,1)
+
+    sDate   = datetime.datetime(2018,11,9)
+    eDate   = datetime.datetime(2018,11,9)
+
+    # NO PARAMETERS BELOW THIS LINE ################################################
+    if clear_cache and os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir)
+
+    if clear_cache and os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
 
     tic = datetime.datetime.now()
     dates   = [sDate]
@@ -706,7 +759,7 @@ if __name__ == '__main__':
     sDate_str   = sDate.strftime('%Y%m%d')
     eDate_str   = sDate.strftime('%Y%m%d')
     pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
-    pkl_fpath   = os.path.join('cache',pkl_fname)
+    pkl_fpath   = os.path.join(cache_dir,pkl_fname)
     if os.path.exists(pkl_fpath):
         with open(pkl_fpath,'rb') as fl:
             print('LOADING: {!s}'.format(pkl_fpath))
@@ -733,7 +786,7 @@ if __name__ == '__main__':
                 plot_filter_path    = os.path.join(output_dir,'filter.png')
             else:
                 plot_filter_path    = None
-            result              = run_edge_detect(date,plot_filter_path=plot_filter_path)
+            result              = run_edge_detect(date,plot_filter_path=plot_filter_path,cache_dir=cache_dir)
             all_results[date] = result
             if result is None: # Missing Data Case
                 continue
