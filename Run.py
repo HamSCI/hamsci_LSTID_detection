@@ -34,6 +34,12 @@ plt.rcParams['axes.xmargin']        = 0
 parent_dir     = 'data_files'
 data_out_path  = 'processed_data/full_data.joblib'
 
+def fmt_xaxis(ax,xlim=None,label=True):
+    ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
+    ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
+    ax.set_xlabel('Time [UTC]')
+    ax.set_xlim(xlim)
+
 def fmt_fxaxis(ax,flim=None):
     """
     Format the frequency x-axis of a spectrum plot.
@@ -92,6 +98,17 @@ def fmt_fyaxis(ax,flim=None):
 
     ax.set_ylabel('Period [min]')
 
+def scale_km(edge,ranges):
+    """
+    Scale detected edge array indices to kilometers.
+    edge:   Edge in array indices.
+    ranges: Ground range vector in km of histogram array.
+    """
+    ranges  = np.array(ranges) 
+    edge_km = (edge / len(ranges) * ranges.ptp()) + ranges.min()
+
+    return edge_km
+
 def plot_filter_response(sos,fs,Wn=None,
                          db_lim=(-40,1),flim=None,figsize=(18,8),
                          worN=4096,plot_phase=False,
@@ -146,23 +163,6 @@ def plot_filter_response(sos,fs,Wn=None,
     print('   Saving: {!s}'.format(plt_fname))
     plt.savefig(plt_fname,bbox_inches='tight')
 
-def scale_km(edge,ranges):
-    """
-    Scale detected edge array indices to kilometers.
-    edge:   Edge in array indices.
-    ranges: Ground range vector in km of histogram array.
-    """
-    ranges  = np.array(ranges) 
-    edge_km = (edge / len(ranges) * ranges.ptp()) + ranges.min()
-
-    return edge_km
-
-def fmt_xaxis(ax,xlim=None,label=True):
-    ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
-    ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
-    ax.set_xlabel('Time [UTC]')
-    ax.set_xlim(xlim)
-
 
 def psd_series(series):
     """
@@ -191,216 +191,6 @@ def adjust_axes(ax_0,ax_1):
     ax_0_pos[2] = ax_1_pos[2]
     ax_0.set_position(ax_0_pos)
 
-def curve_combo_plot(result_dct,cb_pad=0.04,
-                     plot_specgrams=False,output_dir=os.path.join('output','daily_plots')):
-    """
-    Make a curve combo stackplot that includes:
-        1. Heatmap of Ham Radio Spots
-        2. Raw Detected Edge
-        3. Filtered, Windowed Edge
-        4. Spectra of Edges
-
-    Input:
-        result_dct: Dictionary of results produced by run_edge_detect().
-        result_dct should have the following structure:
-            result  = {}
-            result['spotArr']           = spotArr
-            result['med_lines']         = med_lines
-            result['000_detectedEdge']  = edge_0
-            result['001_windowLimits']  = edge_1
-            result['002_hanningDetrend']= edge_2
-            result['003_zeroPad']       = edge_3
-            result['003_zeroPad_PSDdB'] = edge_3_psd
-            result['004_filtered']      = edge_4
-            result['004_filtered_psd']  = edge_4_psd
-            result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
-            result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
-            result['004_filtered_intPSD_db']    = ed4_intPSD_dB
-            result['metaData']  = meta  = {}
-            meta['date']        = date
-            meta['x_trim']      = x_trim
-            meta['y_trim']      = y_trim
-            meta['sigma']       = sigma
-            meta['qs']          = qs
-            meta['occurence_n'] = occurence_n
-            meta['i_max']       = i_max
-            meta['xlim']        = xlim
-            meta['winlim']      = winlim # Datetime limits used for data selection and Hanning window.
-    """
-    md          = result_dct.get('metaData')
-    date        = md.get('date')
-    xlim        = md.get('xlim')
-    winlim      = md.get('winlim')
-
-    arr         = result_dct.get('spotArr')
-    med_lines   = result_dct.get('med_lines')
-    edge_0      = result_dct.get('000_detectedEdge')
-    edge_1      = result_dct.get('001_windowLimits')
-    coefs       = result_dct.get('001_polyFitCoefs')
-    edge_2      = result_dct.get('002_hanningDetrend')
-    edge_3      = result_dct.get('003_zeroPad')
-    edge_3_psd  = result_dct.get('003_zeroPad_PSDdB')
-    edge_4      = result_dct.get('004_filtered')
-    edge_4_psd  = result_dct.get('004_filtered_psd')
-
-    ed4_Tmax_hr     = result_dct.get('004_filtered_Tmax_hr')
-    ed4_PSDdBmax    = result_dct.get('004_filtered_PSDdBmax')
-    ed4_intPSD_dB   = result_dct.get('004_filtered_intPSD_db')
-
-    ranges_km   = arr.coords['ranges_km']
-    arr_times   = [pd.Timestamp(x) for x in arr.coords['datetimes'].values]
-    Ts          = np.mean(np.diff(arr_times)) # Sampling Period
-
-    nCols   = 1
-    nRows   = 3
-    if plot_specgrams:
-        nRows += 1
-
-    axInx   = 0
-    figsize = (18,nRows*5)
-
-    fig     = plt.figure(figsize=figsize)
-    axs     = []
-
-    # Plot Heatmap #########################
-    axInx   = axInx + 1
-    ax      = fig.add_subplot(nRows,nCols,axInx)
-    axs.append(ax)
-
-    ax.set_title(f'| {date} |')
-    mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
-    plt.colorbar(mpbl,label='Radio Spots',aspect=10,pad=cb_pad)
-
-#    for col in med_lines.columns:
-#        if col == 'Time':
-#            continue
-#        lbl = '{!s}'.format(col)
-#        ax.plot(arr_times,med_lines[col],label=lbl)
-
-    # Overlay filtered line on top of heatmap.
-    # We need to add the detrend back to get the filtered line back to
-    # its original location. We can re-calculate the trendline with the
-    # orginal coeffs determined from edge_1, but applying to the time 
-    # series from edge 4. Since this was determined using integer indices,
-    # we need to convert edge_4.index times into indices that match
-    # edge_1.index.
-    inx_0   = np.argmin(np.abs(edge_4.index - edge_1.index.min()))
-    xx      = np.arange(len(edge_4)) - inx_0
-    ffit    = poly.polyval(xx, coefs)
-
-    ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
-    ax.plot(edge_4.index,edge_4+ffit,lw=2,label='Filtered Edge')
-
-    for wl in winlim:
-        ax.axvline(wl,color='0.8',ls='--',lw=2)
-
-    ax.legend(loc='lower right',fontsize='small',ncols=4)
-    fmt_xaxis(ax,xlim)
-
-    ax.set_ylabel('Range [km]')
-    ax.set_ylim(0,3000)
-
-    # Plot Processed Edge
-    axInx   = axInx + 1
-    ax      = fig.add_subplot(nRows,nCols,axInx)
-    axs.append(ax)
-
-    xx          = edge_4.index
-    ed4_line    = ax.plot(xx,edge_4,label='Filtered')
-
-    xx          = edge_3.index
-    ed3_line    = ax.plot(xx,edge_3,label='Zero-Padded')
-
-    xx          = edge_2.index
-    ed2_line    = ax.plot(xx,edge_2,label='Hanning Window Detrended')
-
-    ax.set_ylabel('Range [km]')
-    
-    ax.legend(loc='lower right',fontsize='small')
-
-    fmt_xaxis(ax,xlim)
-
-#    # Plot Unfiltered Spectra
-#    if plot_specgrams:
-#        axInx   = axInx + 1
-#        ax      = fig.add_subplot(nRows,nCols,axInx)
-#        axs.append(ax)
-##            f, t, Sxx = ss.spectrogram(smooth_arr_1, fs, nperseg = 128,noverlap= 64, window=('tukey',0.1) )
-##            f_2, t_2, Sxx_2 = ss.spectrogram(smooth_arr_1, fs, nperseg = 512,noverlap= 1, window=('tukey',0.1) )
-#
-#        nperseg   = 512
-#        noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
-#
-#        f, t, Sxx = signal.spectrogram(edge_3, fs,window='hann',
-#                            nperseg=nperseg,noverlap=noverlap)
-#        mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
-#        plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
-#        fmt_xaxis(ax,xlim)
-#        fmt_fyaxis(ax)
-#
-#    axInx   = axInx + 1
-#    ax      = fig.add_subplot(nRows,nCols,axInx)
-#    axs.append(ax)
-#    xx      = edge_3_psd.index
-#    color   = ed3_line[0].get_color()
-#    ax.plot(xx,edge_3_psd,label='Unfiltered',color=color)
-#    ax.set_title('Unfiltered Spectra')
-#    fmt_fxaxis(ax)
-
-    # Plot Filtered Spectra
-    if plot_specgrams:
-        axInx   = axInx + 1
-        ax      = fig.add_subplot(nRows,nCols,axInx)
-        axs.append(ax)
-        nperseg   = 512
-        noverlap  = int(0.75*nperseg) # 75% Overlap of Windows
-        f, t, Sxx = signal.spectrogram(edge_4, fs,window='hann',
-                            nperseg=nperseg,noverlap=noverlap)
-        mpbl      = ax.pcolormesh(t, f, 10*np.log10(Sxx))
-        plt.colorbar(mpbl,label='PSD [dB]',aspect=10,pad=cb_pad)
-        fmt_xaxis(ax,xlim)
-        fmt_fyaxis(ax)
-
-    axInx   = axInx + 1
-    ax      = fig.add_subplot(nRows,nCols,axInx)
-    axs.append(ax)
-    color   = ed3_line[0].get_color()
-    ax.plot(edge_3_psd.index,edge_3_psd,color=color,ls=':')
-
-    xx      = edge_4_psd.index
-    color   = ed4_line[0].get_color()
-    ax.plot(xx,edge_4_psd,color=color,marker='.')
-
-    txt = []
-    txt.append('$T_{Dominant}$: '+'{:0.1f} hr'.format(ed4_Tmax_hr))
-    txt.append('PSD$_{Dominant}$: '+'{:0.0f} dB'.format(ed4_PSDdBmax))
-    txt.append('$\Sigma$PSD: '+'{:0.0f} dB'.format(ed4_intPSD_dB))
-
-    ax.scatter(1./(3600.*ed4_Tmax_hr),ed4_PSDdBmax,marker='*',s=500,label='\n'.join(txt))
-    ax.legend(loc='lower right')
-
-    ax.set_title('Spectrum')
-    ax.set_ylabel('PSD [dB]')
-    fmt_fxaxis(ax)
-
-    fig.tight_layout()
-
-    # Account for colorbars and line up all axes.
-    for ax_inx, ax in enumerate(axs):
-        if ax_inx == 0:
-            continue
-        adjust_axes(ax,axs[0])
-
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
-    date_str    = date.strftime('%Y%m%d')
-    png_fname   = f'{date_str}_curveCombo.png'
-    png_fpath   = os.path.join(output_dir,png_fname)
-    print('   Saving: {!s}'.format(png_fpath))
-    fig.savefig(png_fpath,bbox_inches='tight')
-    plt.close()
-    return
-
 def run_edge_detect(
     date,
     x_trim=.08333,
@@ -411,7 +201,11 @@ def run_edge_detect(
     i_max=30,
     thresh=None,
     plot_filter_path=None,
+    intSpectlim_hr=(1,4),
     cache_dir='cache'):
+    """
+    intSpectlim_hr: Period range to integrate Power Spectral Density of filtered spectrum.
+    """
 
     date_str    = date.strftime('%Y%m%d')
     pkl_fname   = f'{date_str}_edgeDetect.pkl'
@@ -489,8 +283,8 @@ def run_edge_detect(
         xlim    = (x_0, x_1)
 
         # Window Limits for FFT analysis.
-        win_0   = date + datetime.timedelta(hours=14)
-        win_1   = date + datetime.timedelta(hours=22)
+        win_0   = date + datetime.timedelta(hours=13)
+        win_1   = date + datetime.timedelta(hours=23)
         winlim  = (win_0, win_1)
 
         # Select data in analysis window.
@@ -506,8 +300,8 @@ def run_edge_detect(
         edge_2  = (edge_1 - ffit) * hann
 
         # Zero-pad and ensure signal is regularly sampled.
-        zp_0     = x_0 - datetime.timedelta(hours=48)
-        zp_1     = x_1 + datetime.timedelta(hours=48)
+        zp_0     = x_0# - datetime.timedelta(hours=48)
+        zp_1     = x_1# + datetime.timedelta(hours=48)
         zplim   = (zp_0,zp_1)
 
         times_zplim  = [zplim[0]]
@@ -525,7 +319,7 @@ def run_edge_detect(
         btype   = 'band'
         if btype == 'band':
             bp_T0   = datetime.timedelta(hours=1)
-            bp_T1   = datetime.timedelta(hours=6)
+            bp_T1   = datetime.timedelta(hours=7)
             bp_dt   = datetime.timedelta(minutes=30)
             gpass =  3 # The maximum loss in the passband (dB).
             gstop = 40 # The minimum attenuation in the stopband (dB).
@@ -562,14 +356,34 @@ def run_edge_detect(
             plot_filter_response(sos,fs,Wn,plt_fname=plot_filter_path)
 
         edge_4      = edge_3.copy()
-        edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
-        edge_4_psd  = psd_series(edge_4)
+#        edge_4[:]   = signal.sosfiltfilt(sos,edge_3)
+        
+        sg_win      = datetime.timedelta(hours=4)
+        sg_win_N    = int(sg_win.total_seconds()/Ts.total_seconds())
+        edge_4[:]   = signal.savgol_filter(edge_3,sg_win_N,4)
+
+        tf = np.logical_and(edge_4.index >= winlim[0], edge_4.index < winlim[1])
+        edge_4[tf]  = edge_4[tf]*np.hanning(np.sum(tf))
+        edge_4[~tf] = 0
+
+        edge_4_psd_raw  = psd_series(edge_4)
+
+        # Fit a trend to spectrum
+        xx              = np.arange(len(edge_4_psd_raw))
+        ed4psd_coefs    = poly.polyfit(xx, edge_4_psd_raw, 1)
+        edge_4_psd_fit  = edge_4_psd_raw.copy()
+        edge_4_psd_fit[:] = poly.polyval(xx, ed4psd_coefs)
+        edge_4_psd      = edge_4_psd_raw - edge_4_psd_fit
 
         # Calculate summary values of Edge 4.
         argMax          = edge_4_psd.argmax()
         ed4_Tmax_hr     = 1./(3600 * edge_4_psd.index[argMax])  # Period in hours of strongest spectral component of filtered signal
         ed4_PSDdBmax    = edge_4_psd.iloc[argMax]               # dB value of strongest spectral component of filtered signal
-        ed4_intPSD_dB   = np.sum(edge_4_psd)                    # Integrated Power Spectral Density of filtered signal
+
+        f_0 = 1./(datetime.timedelta(hours=intSpectlim_hr[1]).total_seconds())
+        f_1 = 1./(datetime.timedelta(hours=intSpectlim_hr[0]).total_seconds())
+        tf  = np.logical_and(edge_4_psd.index >= f_0, edge_4_psd.index < f_1)
+        ed4_intSpect   = np.sum(10**(edge_4_psd[tf]/20.))                    # Integrated Spectrum in Window of Interest
 
         daDct               = {}
         daDct['data']       = arr
@@ -590,9 +404,11 @@ def run_edge_detect(
         result['003_zeroPad_PSDdB'] = edge_3_psd
         result['004_filtered']      = edge_4
         result['004_filtered_psd']  = edge_4_psd
+        result['004_filtered_psd_raw']  = edge_4_psd_raw
+        result['004_filtered_psd_fit']  = edge_4_psd_fit
         result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
         result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
-        result['004_filtered_intPSD_db']    = ed4_intPSD_dB
+        result['004_filtered_intSpect']    = ed4_intSpect
         result['metaData']  = meta  = {}
         meta['date']        = date
         meta['x_trim']      = x_trim
@@ -603,6 +419,7 @@ def run_edge_detect(
         meta['i_max']       = i_max
         meta['xlim']        = xlim
         meta['winlim']      = winlim
+        meta['intSpectlim_hr']= intSpectlim_hr
 
         if not os.path.exists(cache_dir):
             os.mkdir(cache_dir)
@@ -612,6 +429,196 @@ def run_edge_detect(
             pickle.dump(result,fl)
 
     return result
+
+def curve_combo_plot(result_dct,cb_pad=0.04,
+                     output_dir=os.path.join('output','daily_plots')):
+    """
+    Make a curve combo stackplot that includes:
+        1. Heatmap of Ham Radio Spots
+        2. Raw Detected Edge
+        3. Filtered, Windowed Edge
+        4. Spectra of Edges
+
+    Input:
+        result_dct: Dictionary of results produced by run_edge_detect().
+        result_dct should have the following structure:
+            result  = {}
+            result['spotArr']           = spotArr
+            result['med_lines']         = med_lines
+            result['000_detectedEdge']  = edge_0
+            result['001_windowLimits']  = edge_1
+            result['002_hanningDetrend']= edge_2
+            result['003_zeroPad']       = edge_3
+            result['003_zeroPad_PSDdB'] = edge_3_psd
+            result['004_filtered']      = edge_4
+            result['004_filtered_psd']  = edge_4_psd
+            result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
+            result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
+            result['004_filtered_intSpect']    = ed4_intSpect
+            result['metaData']  = meta  = {}
+            meta['date']        = date
+            meta['x_trim']      = x_trim
+            meta['y_trim']      = y_trim
+            meta['sigma']       = sigma
+            meta['qs']          = qs
+            meta['occurence_n'] = occurence_n
+            meta['i_max']       = i_max
+            meta['xlim']        = xlim
+            meta['winlim']      = winlim # Datetime limits used for data selection and Hanning window.
+    """
+    md          = result_dct.get('metaData')
+    date        = md.get('date')
+    xlim        = md.get('xlim')
+    winlim      = md.get('winlim')
+    intSpectlim_hr= md.get('intSpectlim_hr')
+
+    arr         = result_dct.get('spotArr')
+    med_lines   = result_dct.get('med_lines')
+    edge_0      = result_dct.get('000_detectedEdge')
+    edge_1      = result_dct.get('001_windowLimits')
+    coefs       = result_dct.get('001_polyFitCoefs')
+    edge_2      = result_dct.get('002_hanningDetrend')
+    edge_3      = result_dct.get('003_zeroPad')
+    edge_3_psd  = result_dct.get('003_zeroPad_PSDdB')
+    edge_4      = result_dct.get('004_filtered')
+    edge_4_psd  = result_dct.get('004_filtered_psd')
+    edge_4_psd_raw  = result_dct.get('004_filtered_psd_raw')
+    edge_4_psd_fit  = result_dct.get('004_filtered_psd_fit')
+
+    ed4_Tmax_hr     = result_dct.get('004_filtered_Tmax_hr')
+    ed4_PSDdBmax    = result_dct.get('004_filtered_PSDdBmax')
+    ed4_intSpect   = result_dct.get('004_filtered_intSpect')
+
+    ranges_km   = arr.coords['ranges_km']
+    arr_times   = [pd.Timestamp(x) for x in arr.coords['datetimes'].values]
+    Ts          = np.mean(np.diff(arr_times)) # Sampling Period
+
+    nCols   = 1
+    nRows   = 4
+
+    axInx   = 0
+    figsize = (18,nRows*5)
+
+    fig     = plt.figure(figsize=figsize)
+    axs     = []
+
+    # Plot Heatmap #########################
+    axInx   = axInx + 1
+    ax      = fig.add_subplot(nRows,nCols,axInx)
+    axs.append(ax)
+
+    ax.set_title(f'| {date} |')
+    mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
+    plt.colorbar(mpbl,label='Radio Spots',aspect=10,pad=cb_pad)
+
+#    for col in med_lines.columns:
+#        if col == 'Time':
+#            continue
+#        lbl = '{!s}'.format(col)
+#        ax.plot(arr_times,med_lines[col],label=lbl)
+
+    # Overlay filtered line on top of heatmap.
+    # We need to add the detrend back to get the filtered line back to
+    # its original location. We can re-calculate the trendline with the
+    # orginal coeffs determined from edge_1, but applying to the time 
+    # series from edge 4. Since this was determined using integer indices,
+    # we need to convert edge_4.index times into indices that match
+    # edge_1.index.
+    inx_0   = np.argmin(np.abs(edge_4.index - edge_1.index.min()))
+    xx      = np.arange(len(edge_4)) - inx_0
+    ffit    = poly.polyval(xx, coefs)
+
+    ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
+    ed4_line    = ax.plot(edge_4.index,edge_4+ffit,lw=2,label='Filtered Edge')
+
+    for wl in winlim:
+        ax.axvline(wl,color='0.8',ls='--',lw=2)
+
+    ax.legend(loc='lower right',fontsize='small',ncols=4)
+    fmt_xaxis(ax,xlim)
+
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(500,2000)
+
+    # Plot Processed Edge
+    axInx   = axInx + 1
+    ax      = fig.add_subplot(nRows,nCols,axInx)
+    axs.append(ax)
+
+    color       = ed0_line[0].get_color()
+    ed3_line    = ax.plot(edge_3.index,edge_3,label='Zero-Padded Hanning Detrended',color=color)
+
+    color       = ed4_line[0].get_color()
+    ax.plot(edge_4.index,edge_4,label='Filtered',color=color)
+
+#    xx          = edge_2.index
+#    ed2_line    = ax.plot(xx,edge_2,label='Hanning Window Detrended')
+
+    ax.set_ylabel('Range [km]')
+    
+    ax.legend(loc='lower right',fontsize='small')
+
+    fmt_xaxis(ax,xlim)
+
+    flims = []
+    flims.append( (None, None) )
+    flims.append( None )
+
+    for flim in flims:
+        # Plot Zoomed Spectrum
+        axInx   = axInx + 1
+        ax      = fig.add_subplot(nRows,nCols,axInx)
+        axs.append(ax)
+
+        # Shade area where the spectrum gets integrated.
+        f_0 = 1./(datetime.timedelta(hours=intSpectlim_hr[1]).total_seconds())
+        f_1 = 1./(datetime.timedelta(hours=intSpectlim_hr[0]).total_seconds())
+        T_lim_txt = '{!s} - {!s} hrs'.format(*intSpectlim_hr)
+        ax.axvspan(f_0,f_1,color='0.90',label=T_lim_txt,zorder=0)
+
+        color   = ed3_line[0].get_color()
+        ax.plot(edge_3_psd.index,edge_3_psd,color=color,ls='-',label='Raw')
+
+        color   = ed4_line[0].get_color()
+        ax.plot(edge_4_psd_raw.index,edge_4_psd_raw,color=color,marker='.',alpha=0.25)
+        ax.plot(edge_4_psd_fit.index,edge_4_psd_fit,color=color,ls='--',alpha=0.75)
+
+        ax.plot(edge_4_psd.index,edge_4_psd,color=color,marker='.',label='Filtered')
+
+        txt = []
+        txt.append('$T_{Dominant}$: '+'{:0.1f} hr'.format(ed4_Tmax_hr))
+        txt.append('PSD$_{Dominant}$: '+'{:0.0f} dB'.format(ed4_PSDdBmax))
+        txt.append('$\Sigma$'+'({!s}): {:0.0f}'.format(T_lim_txt,ed4_intSpect))
+
+        ax.scatter(1./(3600.*ed4_Tmax_hr),ed4_PSDdBmax,marker='*',s=500,label='\n'.join(txt))
+
+        if flim is None:
+            loc = 'lower right'
+        else:
+            loc = 'upper right'
+        ax.legend(loc=loc,fontsize='x-small',ncols=4)
+
+        ax.set_title('Spectrum')
+        ax.set_ylabel('PSD [dB]')
+        fmt_fxaxis(ax,flim=flim)
+
+    fig.tight_layout()
+
+    # Account for colorbars and line up all axes.
+    for ax_inx, ax in enumerate(axs):
+        if ax_inx == 0:
+            continue
+        adjust_axes(ax,axs[0])
+
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    date_str    = date.strftime('%Y%m%d')
+    png_fname   = f'{date_str}_curveCombo.png'
+    png_fpath   = os.path.join(output_dir,png_fname)
+    print('   Saving: {!s}'.format(png_fpath))
+    fig.savefig(png_fpath,bbox_inches='tight')
+    plt.close()
+    return
 
 def plot_season_analysis(all_results,output_dir='output'):
     """
@@ -630,7 +637,7 @@ def plot_season_analysis(all_results,output_dir='output'):
     params = []
     params.append('004_filtered_Tmax_hr')
     params.append('004_filtered_PSDdBmax')
-    params.append('004_filtered_intPSD_db')
+    params.append('004_filtered_intSpect')
 
     df_lst = []
     df_inx = []
@@ -658,11 +665,11 @@ def plot_season_analysis(all_results,output_dir='output'):
 
     ax  = fig.add_subplot(gs[0,:2])
 
-    ckey = '004_filtered_intPSD_db'
+    ckey = '004_filtered_intSpect'
 
     cmap = mpl.cm.cool
-    vmin =  5000
-    vmax = 25000
+    vmin = df['004_filtered_intSpect'].min() 
+    vmax = df['004_filtered_intSpect'].max() 
     norm = mpl.colors.Normalize(vmin=vmin,vmax=vmax)
     pos = list(ax.get_position().bounds)
     pos[0] = 0.675
@@ -684,15 +691,18 @@ def plot_season_analysis(all_results,output_dir='output'):
     lstid_mlw   = lstid_ham.LSTID_HAM()
     df_mlw      = lstid_mlw.df.copy()
     df_mlw      = df_mlw.set_index('date')
+    old_keys    = list(df_mlw.keys())
+    new_keys    = {x:'MLW_'+x for x in old_keys}
+    df_mlw      = df_mlw.rename(columns=new_keys)
 
     # Combine FFT and MLW analysis dataframes.
     dfc = pd.concat([df,df_mlw],axis=1)
 
     # Compare parameters - List of (df, lstid_mlw) keys to compare.
     cmps = []
-    cmps.append( ('004_filtered_Tmax_hr',   'period_hr') )
-    cmps.append( ('004_filtered_PSDdBmax',  'tid_hours') )
-    cmps.append( ('004_filtered_intPSD_db', 'tid_hours') )
+    cmps.append( ('004_filtered_Tmax_hr',   'MLW_period_hr') )
+    cmps.append( ('004_filtered_PSDdBmax',  'MLW_tid_hours') )
+    cmps.append( ('004_filtered_intSpect',  'MLW_tid_hours') )
 
     for pinx,(key_0,key_1) in enumerate(cmps):
         rinx    = pinx + 1
@@ -710,7 +720,7 @@ def plot_season_analysis(all_results,output_dir='output'):
 
         ax0r    = ax0.twinx()
 #        ax0r.plot(p1.index,p1,marker='.')
-        hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label='MLW')
+        hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label='MLW',alpha=0.5)
         hndls.append(hndl)
         ax0r.set_ylabel(key_1)
 
@@ -732,13 +742,13 @@ def plot_season_analysis(all_results,output_dir='output'):
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = True
+    clear_cache = False
 
-#    sDate   = datetime.datetime(2018,11,1)
-#    eDate   = datetime.datetime(2019,5,1)
+    sDate   = datetime.datetime(2018,11,1)
+    eDate   = datetime.datetime(2019,5,1)
 
-    sDate   = datetime.datetime(2018,11,9)
-    eDate   = datetime.datetime(2018,11,9)
+#    sDate   = datetime.datetime(2018,11,9)
+#    eDate   = datetime.datetime(2018,11,9)
 
     # NO PARAMETERS BELOW THIS LINE ################################################
     if clear_cache and os.path.exists(cache_dir):
