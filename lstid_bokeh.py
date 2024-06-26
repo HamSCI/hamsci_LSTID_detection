@@ -23,7 +23,7 @@ import yaml
 
 import bokeh
 from bokeh.layouts import layout, column
-from bokeh.models import Div, RangeSlider, Spinner, ColumnDataSource, Slider
+from bokeh.models import DatetimeRangeSlider, Div, RangeSlider, Spinner, ColumnDataSource, Slider
 from bokeh.plotting import figure, show, curdoc
 from bokeh.transform import linear_cmap
 from bokeh.io import show, output_notebook
@@ -121,14 +121,20 @@ def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
     return data
 
 class SinFit(object):
-    def __init__(self,times,T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,slope_kmph=0,pivot_hr=None):
+    def __init__(self,times,
+                 T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,
+                 slope_kmph=0,pivot_hr=0,
+                 sTime=None,eTime=None):
         t0          = min(times)
         tt_sec      = np.array([(x-t0).total_seconds() for x in times])
 
-        if pivot_hr is None:
-            pivot_hr = np.ptp(tt_sec)/(2*3600.)
+        if sTime is None:
+            sTime = min(times)
 
-        self.times      = times
+        if eTime is None:
+            eTime = max(times)
+
+        self.times      = np.array(times)
         self.tt_sec     = tt_sec
         self.t0         = t0
 
@@ -139,6 +145,8 @@ class SinFit(object):
         p0['offset_km']     = offset_km
         p0['pivot_hr']      = pivot_hr
         p0['slope_kmph']    = slope_kmph
+        p0['sTime']         = sTime
+        p0['eTime']         = eTime
         self.params         = p0
 
     def sin(self,**kwArgs):
@@ -153,13 +161,19 @@ class SinFit(object):
         offset_km       = p0['offset_km']
         pivot_hr        = p0['pivot_hr']
         slope_kmph      = p0['slope_kmph']
+        sTime           = p0['sTime']
+        eTime           = p0['eTime']
 
         phase_rad   = (2.*np.pi) * (phase_hr / T_hr) 
-
         freq        = 1./(datetime.timedelta(hours=T_hr).total_seconds())
         result      = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) +  offset_km
+
         if slope_kmph != 0:
             result      += (slope_kmph/3600.)*(tt_sec + pivot_hr*3600.)
+
+        tf = np.logical_and(times >= sTime, times <= eTime)
+        if np.count_nonzero(~tf) > 0:
+            result[~tf] = np.nan
 
         data        = pd.DataFrame({'curve':result},index=times)
         data.index.name = 'time'
@@ -239,6 +253,18 @@ class BkApp(object):
         slider_pivot_hr = Slider(start=-10, end=10, value=sin_fit.params['pivot_hr'], step=0.1, title="Pivot [hr]:")
         slider_pivot_hr.on_change('value', cb_pivot_hr)
 
+        def cb_dtRange(attr, old, new):
+            sTime   = datetime.datetime.utcfromtimestamp(new[0]/1000.)
+            eTime   = datetime.datetime.utcfromtimestamp(new[1]/1000.)
+            source_new = sin_fit.sin(sTime=sTime,eTime=eTime)
+            source.data = ColumnDataSource.from_df(source_new)
+
+        slider_dtRange = DatetimeRangeSlider(start=min(sin_fit.times), end=max(sin_fit.times),
+                            format = '%d %b %Y %H:%M',
+                            value=(sin_fit.params['sTime'],sin_fit.params['eTime']),
+                             step=(60*1000), title="Datetime Range:")
+        slider_dtRange.on_change('value', cb_dtRange)
+
         col_objs    = []
         col_objs.append(slider_amplitude_km)
         col_objs.append(slider_period)
@@ -246,6 +272,7 @@ class BkApp(object):
         col_objs.append(slider_offset_km)
         col_objs.append(slider_slope_kmph)
         col_objs.append(slider_pivot_hr)
+        col_objs.append(slider_dtRange)
         col_objs.append(plot)
         doc.add_root(column(*col_objs))
         
