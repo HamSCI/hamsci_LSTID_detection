@@ -36,22 +36,28 @@ plt.rcParams['axes.titleweight']    = 'bold'
 plt.rcParams['axes.labelweight']    = 'bold'
 plt.rcParams['axes.xmargin']        = 0
 
+class JobLibLoader(object):
+    def __init__(self):
+        self.date_iter = None
 
-################################################################################
-# Load in CSV Histograms #######################################################
-parent_dir     = 'data_files'
-data_out_path  = 'processed_data/full_data.joblib'
-if not os.path.exists(data_out_path):
-    full_xarr = create_xarr(
-        parent_dir=parent_dir,
-        expected_shape=(720, 300),
-        dtype=(np.uint16, np.float32),
-        apply_fn=mad,
-        plot=False,
-    )
-    joblib.dump(full_xarr, data_out_path)
-date_iter = DateIter(data_out_path) #, label_df=label_out_path)
-################################################################################
+    def _load_data(self):
+        ################################################################################
+        # Load in CSV Histograms #######################################################
+        parent_dir     = 'data_files'
+        data_out_path  = 'processed_data/full_data.joblib'
+        if not os.path.exists(data_out_path):
+            full_xarr = create_xarr(
+                parent_dir=parent_dir,
+                expected_shape=(720, 300),
+                dtype=(np.uint16, np.float32),
+                apply_fn=mad,
+                plot=False,
+            )
+            joblib.dump(full_xarr, data_out_path)
+        date_iter       = DateIter(data_out_path) #, label_df=label_out_path)
+        self.date_iter  = date_iter
+
+jll = JobLibLoader()
 
 def fmt_xaxis(ax,xlim=None,label=True):
     ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
@@ -73,7 +79,10 @@ def plot_heatmap(date,times,ranges_km,arr,xlim=None,cb_pad=0.04):
     plt.close()
 
 def load_spots(date, x_trim=.08333, y_trim=.08,sigma=4.2):
-    arr = date_iter.get_date(date,raise_missing=False)
+    if jll.date_iter is None:
+        jll._load_data()
+
+    arr = jll.date_iter.get_date(date,raise_missing=False)
     if arr is None:
         warnings.warn(f'Date {date} has no input')
         return
@@ -103,6 +112,46 @@ def load_spots(date, x_trim=.08333, y_trim=.08,sigma=4.2):
     result['xlim']      = xlim    
     return result
 
+def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
+    # create the function we want to fit
+    freq   = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+    result = amplitude * np.sin( (2*np.pi*tt_sec*freq )+ phase ) + offset
+    data   = pd.DataFrame({'curve':result},index=times)
+    data.index.name = 'time'
+    return data
+
+class SinFit(object):
+    def __init__(self,times,T_hr=3,amplitude=200,phase=0,offset=1400.):
+        t0          = min(times)
+        tt_sec      = np.array([(x-t0).total_seconds() for x in times])
+
+        self.times      = times
+        self.tt_sec     = tt_sec
+
+        p0  = {}
+        p0['T_hr']      = T_hr
+        p0['amplitude'] = amplitude
+        p0['phase']     = phase
+        p0['offset']    = offset
+        self.params     = p0
+
+    def sin(self,**kwArgs):
+        times       = self.times
+        tt_sec      = self.tt_sec
+
+        self.params.update(kwArgs)
+        p0          = self.params
+        T_hr        = p0['T_hr']
+        amplitude   = p0['amplitude']
+        phase       = p0['phase']
+        offset      = p0['offset']
+
+        freq        = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+        result      = amplitude * np.sin( (2*np.pi*tt_sec*freq )+ phase ) + offset
+        data        = pd.DataFrame({'curve':result},index=times)
+        data.index.name = 'time'
+        return data
+
 class BkApp(object):
     def __init__(self,result):
         self.result = result
@@ -130,25 +179,16 @@ class BkApp(object):
         color_bar = r.construct_color_bar(padding=1)
         plot.add_layout(color_bar, "right")
 
-        tt_sec    = np.array([(x-x_range[0]).total_seconds() for x in times])
-        def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
-            # create the function we want to fit
-            freq   = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-            result = amplitude * np.sin( (2*np.pi*tt_sec*freq )+ phase ) + offset
-            data   = pd.DataFrame({'curve':result},index=times)
-            data.index.name = 'time'
-            return data
-
-        T_hr      = 4
-        data      =  my_sin2(T_hr=T_hr)
-        source    = ColumnDataSource(data=data)
+        sin_fit     = SinFit(times)
+        data        = sin_fit.sin()
+        source      = ColumnDataSource(data=data)
         plot.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
         
         def callback(attr, old, new):
-            source_new = my_sin2(T_hr=new)
+            source_new = sin_fit.sin(T_hr=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider = Slider(start=0.1, end=10, value=T_hr, step=0.1, title="Period [hr]:")
+        slider = Slider(start=0.1, end=10, value=sin_fit.params['T_hr'], step=0.1, title="Period [hr]:")
         slider.on_change('value', callback)
 
         doc.add_root(column(slider, plot))
