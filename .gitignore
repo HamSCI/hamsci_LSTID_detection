@@ -162,4 +162,12 @@ cython_debug/
 #.idea/
 
 *.swp
+*.zip
 .DS_Store
+output/
+processed_data/
+raw_data/
+cache/
+curve_comboplots/
+data_files/
+labels/
