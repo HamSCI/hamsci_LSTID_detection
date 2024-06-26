@@ -1,0 +1,10 @@
+Package                      Version
+---------------------------- --------------------
+joblib                       1.2.0
+matplotlib                   3.6.2
+numpy                        1.25.2
+pandas                       2.2.2
+scipy                        1.11.4
+seaborn                      0.13.2
+statsmodels                  0.13.5
+xarray                       2023.10.1
