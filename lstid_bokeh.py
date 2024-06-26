@@ -121,33 +121,46 @@ def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
     return data
 
 class SinFit(object):
-    def __init__(self,times,T_hr=3,amplitude=200,phase=0,offset=1400.):
+    def __init__(self,times,T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,slope_kmph=0,pivot_hr=None):
         t0          = min(times)
         tt_sec      = np.array([(x-t0).total_seconds() for x in times])
 
+        if pivot_hr is None:
+            pivot_hr = np.ptp(tt_sec)/(2*3600.)
+
         self.times      = times
         self.tt_sec     = tt_sec
+        self.t0         = t0
 
         p0  = {}
-        p0['T_hr']      = T_hr
-        p0['amplitude'] = amplitude
-        p0['phase']     = phase
-        p0['offset']    = offset
-        self.params     = p0
+        p0['T_hr']          = T_hr
+        p0['amplitude_km']  = amplitude_km
+        p0['phase_hr']      = phase_hr
+        p0['offset_km']     = offset_km
+        p0['pivot_hr']      = pivot_hr
+        p0['slope_kmph']    = slope_kmph
+        self.params         = p0
 
     def sin(self,**kwArgs):
         times       = self.times
         tt_sec      = self.tt_sec
 
         self.params.update(kwArgs)
-        p0          = self.params
-        T_hr        = p0['T_hr']
-        amplitude   = p0['amplitude']
-        phase       = p0['phase']
-        offset      = p0['offset']
+        p0              = self.params
+        T_hr            = p0['T_hr']
+        amplitude_km    = p0['amplitude_km']
+        phase_hr        = p0['phase_hr']
+        offset_km       = p0['offset_km']
+        pivot_hr        = p0['pivot_hr']
+        slope_kmph      = p0['slope_kmph']
+
+        phase_rad   = (2.*np.pi) * (phase_hr / T_hr) 
 
         freq        = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-        result      = amplitude * np.sin( (2*np.pi*tt_sec*freq )+ phase ) + offset
+        result      = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) +  offset_km
+        if slope_kmph != 0:
+            result      += (slope_kmph/3600.)*(tt_sec + pivot_hr*3600.)
+
         data        = pd.DataFrame({'curve':result},index=times)
         data.index.name = 'time'
         return data
@@ -184,14 +197,57 @@ class BkApp(object):
         source      = ColumnDataSource(data=data)
         plot.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
         
-        def callback(attr, old, new):
+        def cb_amplitude_km(attr, old, new):
+            source_new = sin_fit.sin(amplitude_km=new)
+            source.data = ColumnDataSource.from_df(source_new)
+
+        slider_amplitude_km = Slider(start=0, end=3000, value=sin_fit.params['amplitude_km'], step=10, title="Amplitude [km]:")
+        slider_amplitude_km.on_change('value', cb_amplitude_km)
+
+        def cb_period(attr, old, new):
             source_new = sin_fit.sin(T_hr=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider = Slider(start=0.1, end=10, value=sin_fit.params['T_hr'], step=0.1, title="Period [hr]:")
-        slider.on_change('value', callback)
+        slider_period = Slider(start=0.1, end=10, value=sin_fit.params['T_hr'], step=0.1, title="Period [hr]:")
+        slider_period.on_change('value', cb_period)
 
-        doc.add_root(column(slider, plot))
+        def cb_phase_hr(attr, old, new):
+            source_new = sin_fit.sin(phase_hr=new)
+            source.data = ColumnDataSource.from_df(source_new)
+
+        slider_phase_hr = Slider(start=-10, end=10, value=sin_fit.params['phase_hr'], step=0.1, title="Phase [hr]:")
+        slider_phase_hr.on_change('value', cb_phase_hr)
+
+        def cb_offset_km(attr, old, new):
+            source_new = sin_fit.sin(offset_km=new)
+            source.data = ColumnDataSource.from_df(source_new)
+
+        slider_offset_km = Slider(start=0, end=3000, value=sin_fit.params['offset_km'], step=10, title="Offset [km]:")
+        slider_offset_km.on_change('value', cb_offset_km)
+
+        def cb_slope_kmph(attr, old, new):
+            source_new = sin_fit.sin(slope_kmph=new)
+            source.data = ColumnDataSource.from_df(source_new)
+
+        slider_slope_kmph = Slider(start=-1000, end=1000, value=sin_fit.params['slope_kmph'], step=10, title="Slope [km/hr]:")
+        slider_slope_kmph.on_change('value', cb_slope_kmph)
+
+        def cb_pivot_hr(attr, old, new):
+            source_new = sin_fit.sin(pivot_hr=new)
+            source.data = ColumnDataSource.from_df(source_new)
+
+        slider_pivot_hr = Slider(start=-10, end=10, value=sin_fit.params['pivot_hr'], step=0.1, title="Pivot [hr]:")
+        slider_pivot_hr.on_change('value', cb_pivot_hr)
+
+        col_objs    = []
+        col_objs.append(slider_amplitude_km)
+        col_objs.append(slider_period)
+        col_objs.append(slider_phase_hr)
+        col_objs.append(slider_offset_km)
+        col_objs.append(slider_slope_kmph)
+        col_objs.append(slider_pivot_hr)
+        col_objs.append(plot)
+        doc.add_root(column(*col_objs))
         
         doc.theme = Theme(json=yaml.load("""
             attrs:
