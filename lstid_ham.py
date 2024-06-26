@@ -82,7 +82,7 @@ class LSTID_HAM(object):
         df  = pd.read_csv(data_in,comment='#',parse_dates=[0])
 
         # Convert data columns to floats.
-        cols = ['start_time', 'end_time', 'low_range_km', 'high_range_km', 'tid_hours', 'range_km', 'cycles', 'period_hr']
+        cols = ['start_time', 'end_time', 'low_range_km', 'high_range_km', 'tid_hours', 'range_range', 'cycles', 'period_hr']
         for col in cols:
             df.loc[:,col] = pd.to_numeric(df[col],errors='coerce')
 

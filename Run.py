@@ -17,11 +17,20 @@ import matplotlib.pyplot as plt
 
 from scipy import signal
 from scipy.ndimage import gaussian_filter
+from scipy.optimize import curve_fit
 from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
 
+# Load in Mary Lou West's Manual LSTID Analysis
 import lstid_ham
+lstid_mlw   = lstid_ham.LSTID_HAM()
+df_mlw      = lstid_mlw.df.copy()
+df_mlw      = df_mlw.set_index('date')
+old_keys    = list(df_mlw.keys())
+new_keys    = {x:'MLW_'+x for x in old_keys}
+df_mlw      = df_mlw.rename(columns=new_keys)
+
 
 plt.rcParams['font.size']           = 18
 plt.rcParams['font.weight']         = 'bold'
@@ -201,7 +210,7 @@ def run_edge_detect(
     i_max=30,
     thresh=None,
     plot_filter_path=None,
-    intSpectlim_hr=(1,4),
+    intSpectlim_hr=(1,4.5),
     cache_dir='cache'):
     """
     intSpectlim_hr: Period range to integrate Power Spectral Density of filtered spectrum.
@@ -276,6 +285,8 @@ def run_edge_detect(
             raise ValueError(f'Threshold {thresh} of type {type(thresh)} is invalid')
 
         edge_0  = pd.Series(min_line.squeeze(), index=arr_times, name=date)
+        edge_0  = edge_0.interpolate()
+        edge_0  = edge_0.fillna(0.)
 
         # X-Limits for plotting
         x_0     = date + datetime.timedelta(hours=12)
@@ -376,15 +387,54 @@ def run_edge_detect(
         edge_4_psd      = edge_4_psd_raw - edge_4_psd_fit
 
         # Calculate summary values of Edge 4.
-        argMax          = edge_4_psd.argmax()
-        ed4_Tmax_hr     = 1./(3600 * edge_4_psd.index[argMax])  # Period in hours of strongest spectral component of filtered signal
-        ed4_PSDdBmax    = edge_4_psd.iloc[argMax]               # dB value of strongest spectral component of filtered signal
-
         f_0 = 1./(datetime.timedelta(hours=intSpectlim_hr[1]).total_seconds())
         f_1 = 1./(datetime.timedelta(hours=intSpectlim_hr[0]).total_seconds())
-        tf  = np.logical_and(edge_4_psd.index >= f_0, edge_4_psd.index < f_1)
-        ed4_intSpect   = np.sum(10**(edge_4_psd[tf]/20.))                    # Integrated Spectrum in Window of Interest
+        tf  = np.logical_and(edge_4_psd.index >= f_0, edge_4_psd.index <= f_1)
+        ed4psd_tf = edge_4_psd[tf].copy()
+        ed4_intSpect   = np.sum(10**(ed4psd_tf/20.))                    # Integrated Spectrum in Window of Interest
 
+        argMax          = ed4psd_tf.argmax()
+        ed4_Tmax_hr     = 1./(3600 * ed4psd_tf.index[argMax])  # Period in hours of strongest spectral component of filtered signal
+        ed4_PSDdBmax    = ed4psd_tf.iloc[argMax]               # dB value of strongest spectral component of filtered signal
+
+
+        # Sinusoid Fitting
+        tt_sec = np.array([x.total_seconds() for x in (edge_3.index - edge_3.index.min())])
+        data   = edge_3.values
+
+        guess_freq      = 1./datetime.timedelta(hours=3).total_seconds()
+        guess_amplitude = np.ptp(edge_3)
+        guess_phase     = 0
+        guess_offset    = np.mean(edge_3)
+
+        p0=[guess_freq, guess_amplitude, guess_phase, guess_offset]
+
+        # create the function we want to fit
+        def my_sin(tt_sec, freq, amplitude, phase, offset):
+            return np.sin( (2*np.pi*tt_sec*freq )+ phase ) * amplitude + offset
+
+        # now do the fit
+        sinFit = curve_fit(my_sin, tt_sec, data, p0=p0)
+        sinFit_T_hr     = (1./sinFit[0][0]) / 3600.
+        sinFit_amp      = sinFit[0][1]
+        sinFit_phase    = sinFit[0][2]
+        sinFit_offset   = sinFit[0][3]
+
+        # we'll use this to plot our first estimate. This might already be good enough for you
+        data_first_guess = my_sin(tt_sec, *p0)
+
+        # recreate the fitted curve using the optimized parameters
+        sin_fit = my_sin(tt_sec, *sinFit[0])
+
+        tf = np.logical_and(edge_3.index >= winlim[0], edge_3.index < winlim[1])
+        sin_fit[tf]  = sin_fit[tf]#*np.hanning(np.sum(tf))
+        sin_fit[~tf] = 0
+
+        tmp = edge_3.copy()
+        tmp[:]  = sin_fit
+        sin_fit = tmp
+
+        # Package SpotArray into XArray
         daDct               = {}
         daDct['data']       = arr
         daDct['coords']     = coords = {}
@@ -406,9 +456,10 @@ def run_edge_detect(
         result['004_filtered_psd']  = edge_4_psd
         result['004_filtered_psd_raw']  = edge_4_psd_raw
         result['004_filtered_psd_fit']  = edge_4_psd_fit
-        result['004_filtered_Tmax_hr']      = ed4_Tmax_hr
-        result['004_filtered_PSDdBmax']     = ed4_PSDdBmax 
-        result['004_filtered_intSpect']    = ed4_intSpect
+        result['004_filtered_Tmax_hr']  = ed4_Tmax_hr
+        result['004_filtered_PSDdBmax'] = ed4_PSDdBmax 
+        result['004_filtered_intSpect'] = ed4_intSpect
+        result['sin_fit']               = sin_fit
         result['metaData']  = meta  = {}
         meta['date']        = date
         meta['x_trim']      = x_trim
@@ -420,6 +471,10 @@ def run_edge_detect(
         meta['xlim']        = xlim
         meta['winlim']      = winlim
         meta['intSpectlim_hr']= intSpectlim_hr
+        result['sinFit_T_hr']   = sinFit_T_hr
+        result['sinFit_amp']    = sinFit_amp 
+        result['sinFit_phase']  = sinFit_phase
+        result['sinFit_offset'] = sinFit_offset
 
         if not os.path.exists(cache_dir):
             os.mkdir(cache_dir)
@@ -432,6 +487,7 @@ def run_edge_detect(
 
 def curve_combo_plot(result_dct,cb_pad=0.04,
                      output_dir=os.path.join('output','daily_plots')):
+                     
     """
     Make a curve combo stackplot that includes:
         1. Heatmap of Ham Radio Spots
@@ -484,17 +540,18 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     edge_4_psd  = result_dct.get('004_filtered_psd')
     edge_4_psd_raw  = result_dct.get('004_filtered_psd_raw')
     edge_4_psd_fit  = result_dct.get('004_filtered_psd_fit')
+    sin_fit     = result_dct.get('sin_fit')
 
     ed4_Tmax_hr     = result_dct.get('004_filtered_Tmax_hr')
     ed4_PSDdBmax    = result_dct.get('004_filtered_PSDdBmax')
-    ed4_intSpect   = result_dct.get('004_filtered_intSpect')
+    ed4_intSpect    = result_dct.get('004_filtered_intSpect')
 
     ranges_km   = arr.coords['ranges_km']
     arr_times   = [pd.Timestamp(x) for x in arr.coords['datetimes'].values]
     Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
     nCols   = 1
-    nRows   = 4
+    nRows   = 5
 
     axInx   = 0
     figsize = (18,nRows*5)
@@ -551,6 +608,8 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     color       = ed4_line[0].get_color()
     ax.plot(edge_4.index,edge_4,label='Filtered',color=color)
 
+    ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='red')
+
 #    xx          = edge_2.index
 #    ed2_line    = ax.plot(xx,edge_2,label='Hanning Window Detrended')
 
@@ -601,6 +660,47 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
         ax.set_title('Spectrum')
         ax.set_ylabel('PSD [dB]')
         fmt_fxaxis(ax,flim=flim)
+
+    # Print TID Info
+    axInx   = axInx + 1
+    ax      = fig.add_subplot(nRows,nCols,axInx)
+    ax.grid(False)
+    for xtl in ax.get_xticklabels():
+        xtl.set_visible(False)
+    for ytl in ax.get_yticklabels():
+        ytl.set_visible(False)
+    axs.append(ax)
+
+    if date in df_mlw.index:
+        mlw = df_mlw.loc[date,:]
+    else:
+        mlw = {}
+    #ipdb> mlw
+    #MLW_start_time         13.0
+    #MLW_end_time           23.0
+    #MLW_low_range_km      900.0
+    #MLW_high_range_km    1500.0
+    #MLW_tid_hours          10.0
+    #MLW_range_range       600.0
+    #MLW_cycles              4.0
+    #MLW_period_hr           2.5
+    #MLW_comment            nice
+    #Name: 2018-11-09 00:00:00, dtype: object
+
+#        result['sinFit_T_hr']   = sinFit_T_hr
+#        result['sinFit_amp']    = sinFit_amp 
+#        result['sinFit_phase']  = sinFit_phase
+#        result['sinFit_offset'] = sinFit_offset
+
+    txt = []
+    txt.append('               MLW          sinFit       FFT')
+    txt.append('T [hr]:        {:5.1f}      {:5.1f}      {:5.1f}'.format(mlw.get('MLW_period_hr',np.nan),result['sinFit_T_hr'],result['004_filtered_Tmax_hr']))
+    txt.append('Range_Range:   {:5.1f}'.format(mlw.get('MLW_range_range',np.nan)))
+    txt.append('MLW TID Hours: {:5.1f}'.format(mlw.get('MLW_tid_hours',np.nan)))
+    txt.append('MLW Comment:   {!s}'.format(mlw.get('MLW_comment')))
+
+    fontdict = {'weight':'normal','family':'monospace'}
+    ax.text(0.05,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
 
     fig.tight_layout()
 
@@ -687,14 +787,6 @@ def plot_season_analysis(all_results,output_dir='output'):
         ax.plot(psd.index,psd,color=color)
     fmt_fxaxis(ax) 
 
-    # Load in Mary Lou West's Manual LSTID Analysis
-    lstid_mlw   = lstid_ham.LSTID_HAM()
-    df_mlw      = lstid_mlw.df.copy()
-    df_mlw      = df_mlw.set_index('date')
-    old_keys    = list(df_mlw.keys())
-    new_keys    = {x:'MLW_'+x for x in old_keys}
-    df_mlw      = df_mlw.rename(columns=new_keys)
-
     # Combine FFT and MLW analysis dataframes.
     dfc = pd.concat([df,df_mlw],axis=1)
 
@@ -742,13 +834,16 @@ def plot_season_analysis(all_results,output_dir='output'):
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = False
+    clear_cache = True
 
     sDate   = datetime.datetime(2018,11,1)
-    eDate   = datetime.datetime(2019,5,1)
+    eDate   = datetime.datetime(2019,4,30)
 
 #    sDate   = datetime.datetime(2018,11,9)
 #    eDate   = datetime.datetime(2018,11,9)
+
+#    sDate   = datetime.datetime(2018,11,5)
+#    eDate   = datetime.datetime(2018,11,5)
 
     # NO PARAMETERS BELOW THIS LINE ################################################
     if clear_cache and os.path.exists(cache_dir):
