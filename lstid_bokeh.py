@@ -22,7 +22,6 @@ from utils import DateIter
 import yaml
 
 import bokeh
-from bokeh.layouts import layout, column
 from bokeh.models import DatetimeRangeSlider, Div, RangeSlider, Spinner, ColumnDataSource, Slider
 from bokeh.plotting import figure, show, curdoc
 from bokeh.transform import linear_cmap
@@ -179,6 +178,26 @@ class SinFit(object):
         data.index.name = 'time'
         return data
 
+class SpotHeatMap(object):
+    def __init__(self, result, fig):
+        date        = result['date']
+        times       = result['times']
+        ranges_km   = result['ranges_km']
+        image       = result['arr']
+
+        yy          = min(ranges_km)
+        dh          = np.ptp(ranges_km)
+        xx          = min(times)
+        dw          = max(times) - min(times)
+        cmapper     = bokeh.models.LinearColorMapper(palette="Viridis256", low=0, high=10)
+        img         = fig.image(image=[image], color_mapper=cmapper,dh=dh, dw=dw, x=xx, y=yy)
+
+        color_bar   = img.construct_color_bar(padding=1)
+        fig.add_layout(color_bar, "right")
+
+        self.fig    = fig
+        self.img    = img
+
 class BkApp(object):
     def __init__(self,result):
         self.result = result
@@ -190,67 +209,65 @@ class BkApp(object):
         ranges_km   = result['ranges_km']
         image       = result['arr']
         
-        x_range   = result['xlim']
-        y_range   = (min(ranges_km), max(ranges_km))
-        title     = date.strftime('%Y %b %d')
+        x_range     = result['xlim']
+        y_range     = (min(ranges_km), max(ranges_km))
+        title       = date.strftime('%Y %b %d')
         
-        plot      = figure(x_range=x_range, y_range=y_range, title=title)
-        
-        yy        = min(ranges_km)
-        dh        = np.ptp(ranges_km)
-        xx        = min(times)
-        dw        = max(times) - min(times)
-        color_mapper = bokeh.models.LinearColorMapper(palette="Viridis256", low=0, high=10)
-        r         = plot.image(image=[image], color_mapper=color_mapper,dh=dh, dw=dw, x=xx, y=yy)
+        fig         = figure(x_range=x_range, y_range=y_range, title=title)
 
-        color_bar = r.construct_color_bar(padding=1)
-        plot.add_layout(color_bar, "right")
+        shp         = SpotHeatMap(result,fig)
 
         sin_fit     = SinFit(times)
         data        = sin_fit.sin()
         source      = ColumnDataSource(data=data)
-        plot.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
+        fig.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
         
         def cb_amplitude_km(attr, old, new):
-            source_new = sin_fit.sin(amplitude_km=new)
+            source_new  = sin_fit.sin(amplitude_km=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider_amplitude_km = Slider(start=0, end=3000, value=sin_fit.params['amplitude_km'], step=10, title="Amplitude [km]:")
+        slider_amplitude_km = Slider(start=0, end=3000, value=sin_fit.params['amplitude_km'],
+                                     step=10, title="Amplitude [km]:",sizing_mode='stretch_both')
         slider_amplitude_km.on_change('value', cb_amplitude_km)
 
         def cb_period(attr, old, new):
-            source_new = sin_fit.sin(T_hr=new)
+            source_new  = sin_fit.sin(T_hr=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider_period = Slider(start=0.1, end=10, value=sin_fit.params['T_hr'], step=0.1, title="Period [hr]:")
+        slider_period = Slider(start=0.1, end=10, value=sin_fit.params['T_hr'],
+                               step=0.1, title="Period [hr]:",sizing_mode='stretch_both')
         slider_period.on_change('value', cb_period)
 
         def cb_phase_hr(attr, old, new):
-            source_new = sin_fit.sin(phase_hr=new)
+            source_new  = sin_fit.sin(phase_hr=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider_phase_hr = Slider(start=-10, end=10, value=sin_fit.params['phase_hr'], step=0.1, title="Phase [hr]:")
+        slider_phase_hr = Slider(start=-10, end=10, value=sin_fit.params['phase_hr'],
+                                 step=0.1, title="Phase [hr]:",sizing_mode='stretch_both')
         slider_phase_hr.on_change('value', cb_phase_hr)
 
         def cb_offset_km(attr, old, new):
             source_new = sin_fit.sin(offset_km=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider_offset_km = Slider(start=0, end=3000, value=sin_fit.params['offset_km'], step=10, title="Offset [km]:")
+        slider_offset_km = Slider(start=0, end=3000, value=sin_fit.params['offset_km'],
+                                  step=10, title="Offset [km]:",sizing_mode='stretch_both')
         slider_offset_km.on_change('value', cb_offset_km)
 
         def cb_slope_kmph(attr, old, new):
             source_new = sin_fit.sin(slope_kmph=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider_slope_kmph = Slider(start=-1000, end=1000, value=sin_fit.params['slope_kmph'], step=10, title="Slope [km/hr]:")
+        slider_slope_kmph = Slider(start=-1000, end=1000, value=sin_fit.params['slope_kmph'],
+                                   step=10, title="Slope [km/hr]:",sizing_mode='stretch_both')
         slider_slope_kmph.on_change('value', cb_slope_kmph)
 
         def cb_pivot_hr(attr, old, new):
             source_new = sin_fit.sin(pivot_hr=new)
             source.data = ColumnDataSource.from_df(source_new)
 
-        slider_pivot_hr = Slider(start=-10, end=10, value=sin_fit.params['pivot_hr'], step=0.1, title="Pivot [hr]:")
+        slider_pivot_hr = Slider(start=-10, end=10, value=sin_fit.params['pivot_hr'],
+                                 step=0.1, title="Pivot [hr]:",sizing_mode='stretch_both')
         slider_pivot_hr.on_change('value', cb_pivot_hr)
 
         def cb_dtRange(attr, old, new):
@@ -260,10 +277,17 @@ class BkApp(object):
             source.data = ColumnDataSource.from_df(source_new)
 
         slider_dtRange = DatetimeRangeSlider(start=min(sin_fit.times), end=max(sin_fit.times),
-                            format = '%d %b %Y %H:%M',
+                            format = '%H:%M',
                             value=(sin_fit.params['sTime'],sin_fit.params['eTime']),
-                             step=(60*1000), title="Datetime Range:")
+                             step=(60*1000), title="Datetime Range:",sizing_mode='stretch_both')
         slider_dtRange.on_change('value', cb_dtRange)
+
+        # heading fills available width
+#        heading = bokeh.models.Div(..., height=80, sizing_mode="stretch_width")
+        header = []
+        header.append(bokeh.models.Button(label="Back", button_type="success"))
+        header.append(bokeh.models.Button(label="Forward", button_type="success"))
+        header  = bokeh.layouts.row(*header)
 
         col_objs    = []
         col_objs.append(slider_amplitude_km)
@@ -273,8 +297,11 @@ class BkApp(object):
         col_objs.append(slider_slope_kmph)
         col_objs.append(slider_pivot_hr)
         col_objs.append(slider_dtRange)
-        col_objs.append(plot)
-        doc.add_root(column(*col_objs))
+        widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
+
+        row     = bokeh.layouts.row(widgets,fig,height=1000)
+        lyt     = bokeh.layouts.column(header,row,sizing_mode='stretch_both')
+        doc.add_root(lyt)
         
         doc.theme = Theme(json=yaml.load("""
             attrs:
