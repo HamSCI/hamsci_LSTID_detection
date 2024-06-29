@@ -163,33 +163,33 @@ class SinFit(object):
 
         # Define sliders to adjust sinusoid parameters.
         slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
-                                     step=10, title="Amplitude [km]:",sizing_mode='stretch_both')
+                                     step=10, title="Amplitude [km]",sizing_mode='stretch_both')
         slider_amplitude_km.on_change('value', self.cb_amplitude_km)
 
         slider_period = Slider(start=0.1, end=10, value=self.params['T_hr'],
-                               step=0.1, title="Period [hr]:",sizing_mode='stretch_both')
+                               step=0.1, title="Period [hr]",sizing_mode='stretch_both')
         slider_period.on_change('value', self.cb_period)
 
         slider_phase_hr = Slider(start=-10, end=10, value=self.params['phase_hr'],
-                                 step=0.1, title="Phase [hr]:",sizing_mode='stretch_both')
+                                 step=0.1, title="Phase [hr]",sizing_mode='stretch_both')
         slider_phase_hr.on_change('value', self.cb_phase_hr)
 
         slider_offset_km = Slider(start=0, end=3000, value=self.params['offset_km'],
-                                  step=10, title="Offset [km]:",sizing_mode='stretch_both')
+                                  step=10, title="Offset [km]",sizing_mode='stretch_both')
         slider_offset_km.on_change('value', self.cb_offset_km)
 
         slider_slope_kmph = Slider(start=-1000, end=1000, value=self.params['slope_kmph'],
-                                   step=10, title="Slope [km/hr]:",sizing_mode='stretch_both')
+                                   step=10, title="Slope [km/hr]",sizing_mode='stretch_both')
         slider_slope_kmph.on_change('value', self.cb_slope_kmph)
 
         slider_pivot_hr = Slider(start=-10, end=10, value=self.params['pivot_hr'],
-                                 step=0.1, title="Pivot [hr]:",sizing_mode='stretch_both')
+                                 step=0.1, title="Pivot [hr]",sizing_mode='stretch_both')
         slider_pivot_hr.on_change('value', self.cb_pivot_hr)
 
         slider_dtRange = DatetimeRangeSlider(start=min(self.times), end=max(self.times),
                             format = '%H:%M',
                             value=(self.params['sTime'],self.params['eTime']),
-                             step=(60*1000), title="Datetime Range:",sizing_mode='stretch_both')
+                             step=(60*1000), title="Datetime Range",sizing_mode='stretch_both')
         slider_dtRange.on_change('value', self.cb_dtRange)
 
         # Put all sliders into a Bokeh column layout.
