@@ -120,10 +120,12 @@ def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
     return data
 
 class SinFit(object):
-    def __init__(self,times,
+    def __init__(self,times,fig,
                  T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,
                  slope_kmph=0,pivot_hr=0,
                  sTime=None,eTime=None):
+
+        # Define time arrays and parameters.
         t0          = min(times)
         tt_sec      = np.array([(x-t0).total_seconds() for x in times])
 
@@ -137,6 +139,7 @@ class SinFit(object):
         self.tt_sec     = tt_sec
         self.t0         = t0
 
+        # Define initial sinusoid parameters.
         p0  = {}
         p0['T_hr']          = T_hr
         p0['amplitude_km']  = amplitude_km
@@ -148,7 +151,115 @@ class SinFit(object):
         p0['eTime']         = eTime
         self.params         = p0
 
+        # Calculate initial sinusoid.
+        data                = self.sin()
+        source              = ColumnDataSource(data=data)
+        self.source         = source
+
+        # Plot sinusoid on figure.
+        line                = fig.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
+        self.fig            = fig
+        self.line           = line
+
+        # Define sliders to adjust sinusoid parameters.
+        slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
+                                     step=10, title="Amplitude [km]:",sizing_mode='stretch_both')
+        slider_amplitude_km.on_change('value', self.cb_amplitude_km)
+
+        slider_period = Slider(start=0.1, end=10, value=self.params['T_hr'],
+                               step=0.1, title="Period [hr]:",sizing_mode='stretch_both')
+        slider_period.on_change('value', self.cb_period)
+
+        slider_phase_hr = Slider(start=-10, end=10, value=self.params['phase_hr'],
+                                 step=0.1, title="Phase [hr]:",sizing_mode='stretch_both')
+        slider_phase_hr.on_change('value', self.cb_phase_hr)
+
+        slider_offset_km = Slider(start=0, end=3000, value=self.params['offset_km'],
+                                  step=10, title="Offset [km]:",sizing_mode='stretch_both')
+        slider_offset_km.on_change('value', self.cb_offset_km)
+
+        slider_slope_kmph = Slider(start=-1000, end=1000, value=self.params['slope_kmph'],
+                                   step=10, title="Slope [km/hr]:",sizing_mode='stretch_both')
+        slider_slope_kmph.on_change('value', self.cb_slope_kmph)
+
+        slider_pivot_hr = Slider(start=-10, end=10, value=self.params['pivot_hr'],
+                                 step=0.1, title="Pivot [hr]:",sizing_mode='stretch_both')
+        slider_pivot_hr.on_change('value', self.cb_pivot_hr)
+
+        slider_dtRange = DatetimeRangeSlider(start=min(self.times), end=max(self.times),
+                            format = '%H:%M',
+                            value=(self.params['sTime'],self.params['eTime']),
+                             step=(60*1000), title="Datetime Range:",sizing_mode='stretch_both')
+        slider_dtRange.on_change('value', self.cb_dtRange)
+
+        # Put all sliders into a Bokeh column layout.
+        col_objs    = []
+        col_objs.append(slider_amplitude_km)
+        col_objs.append(slider_period)
+        col_objs.append(slider_phase_hr)
+        col_objs.append(slider_offset_km)
+        col_objs.append(slider_slope_kmph)
+        col_objs.append(slider_pivot_hr)
+        col_objs.append(slider_dtRange)
+        self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
+
+    def cb_amplitude_km(self,attr,old,new):
+        """
+        Callback function for amplitude slider.
+        """
+        source_new          = self.sin(amplitude_km=new)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
+    def cb_period(self,attr,old,new):
+        """
+        Callback function for period slider.
+        """
+        source_new          = self.sin(T_hr=new)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
+    def cb_phase_hr(self,attr,old,new):
+        """
+        Callback function for phase slider.
+        """
+        source_new          = self.sin(phase_hr=new)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
+    def cb_offset_km(self,attr,old,new):
+        """
+        Callback function for offset slider.
+        """
+        source_new          = self.sin(offset_km=new)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
+    def cb_slope_kmph(self,attr,old,new):
+        """
+        Callback function for slope slider.
+        """
+        source_new          = self.sin(slope_kmph=new)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
+    def cb_pivot_hr(self,attr,old,new):
+        """
+        Callback function for pivot slider.
+        """
+        source_new          = self.sin(pivot_hr=new)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
+    def cb_dtRange(self,attr,old,new):
+        """
+        Callback function for datetime range slider.
+        """
+        sTime               = datetime.datetime.utcfromtimestamp(new[0]/1000.)
+        eTime               = datetime.datetime.utcfromtimestamp(new[1]/1000.)
+        source_new          = self.sin(sTime=sTime,eTime=eTime)
+        self.source.data    = ColumnDataSource.from_df(source_new)
+
     def sin(self,**kwArgs):
+        """
+        Calculate a sinusoid using the parameters stored in self.params.
+
+        Any self.params item can be updated by passing a keyword argument.
+        """
         times       = self.times
         tt_sec      = self.tt_sec
 
@@ -214,74 +325,9 @@ class BkApp(object):
         title       = date.strftime('%Y %b %d')
         
         fig         = figure(x_range=x_range, y_range=y_range, title=title)
-
         shp         = SpotHeatMap(result,fig)
-
-        sin_fit     = SinFit(times)
-        data        = sin_fit.sin()
-        source      = ColumnDataSource(data=data)
-        fig.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
+        sin_fit     = SinFit(times,fig)
         
-        def cb_amplitude_km(attr, old, new):
-            source_new  = sin_fit.sin(amplitude_km=new)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_amplitude_km = Slider(start=0, end=3000, value=sin_fit.params['amplitude_km'],
-                                     step=10, title="Amplitude [km]:",sizing_mode='stretch_both')
-        slider_amplitude_km.on_change('value', cb_amplitude_km)
-
-        def cb_period(attr, old, new):
-            source_new  = sin_fit.sin(T_hr=new)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_period = Slider(start=0.1, end=10, value=sin_fit.params['T_hr'],
-                               step=0.1, title="Period [hr]:",sizing_mode='stretch_both')
-        slider_period.on_change('value', cb_period)
-
-        def cb_phase_hr(attr, old, new):
-            source_new  = sin_fit.sin(phase_hr=new)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_phase_hr = Slider(start=-10, end=10, value=sin_fit.params['phase_hr'],
-                                 step=0.1, title="Phase [hr]:",sizing_mode='stretch_both')
-        slider_phase_hr.on_change('value', cb_phase_hr)
-
-        def cb_offset_km(attr, old, new):
-            source_new = sin_fit.sin(offset_km=new)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_offset_km = Slider(start=0, end=3000, value=sin_fit.params['offset_km'],
-                                  step=10, title="Offset [km]:",sizing_mode='stretch_both')
-        slider_offset_km.on_change('value', cb_offset_km)
-
-        def cb_slope_kmph(attr, old, new):
-            source_new = sin_fit.sin(slope_kmph=new)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_slope_kmph = Slider(start=-1000, end=1000, value=sin_fit.params['slope_kmph'],
-                                   step=10, title="Slope [km/hr]:",sizing_mode='stretch_both')
-        slider_slope_kmph.on_change('value', cb_slope_kmph)
-
-        def cb_pivot_hr(attr, old, new):
-            source_new = sin_fit.sin(pivot_hr=new)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_pivot_hr = Slider(start=-10, end=10, value=sin_fit.params['pivot_hr'],
-                                 step=0.1, title="Pivot [hr]:",sizing_mode='stretch_both')
-        slider_pivot_hr.on_change('value', cb_pivot_hr)
-
-        def cb_dtRange(attr, old, new):
-            sTime   = datetime.datetime.utcfromtimestamp(new[0]/1000.)
-            eTime   = datetime.datetime.utcfromtimestamp(new[1]/1000.)
-            source_new = sin_fit.sin(sTime=sTime,eTime=eTime)
-            source.data = ColumnDataSource.from_df(source_new)
-
-        slider_dtRange = DatetimeRangeSlider(start=min(sin_fit.times), end=max(sin_fit.times),
-                            format = '%H:%M',
-                            value=(sin_fit.params['sTime'],sin_fit.params['eTime']),
-                             step=(60*1000), title="Datetime Range:",sizing_mode='stretch_both')
-        slider_dtRange.on_change('value', cb_dtRange)
-
         # heading fills available width
 #        heading = bokeh.models.Div(..., height=80, sizing_mode="stretch_width")
         header = []
@@ -289,17 +335,7 @@ class BkApp(object):
         header.append(bokeh.models.Button(label="Forward", button_type="success"))
         header  = bokeh.layouts.row(*header)
 
-        col_objs    = []
-        col_objs.append(slider_amplitude_km)
-        col_objs.append(slider_period)
-        col_objs.append(slider_phase_hr)
-        col_objs.append(slider_offset_km)
-        col_objs.append(slider_slope_kmph)
-        col_objs.append(slider_pivot_hr)
-        col_objs.append(slider_dtRange)
-        widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
-
-        row     = bokeh.layouts.row(widgets,fig,height=1000)
+        row     = bokeh.layouts.row(sin_fit.widgets,fig,height=1000)
         lyt     = bokeh.layouts.column(header,row,sizing_mode='stretch_both')
         doc.add_root(lyt)
         
