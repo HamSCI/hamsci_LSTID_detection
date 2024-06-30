@@ -36,8 +36,18 @@ plt.rcParams['axes.labelweight']    = 'bold'
 plt.rcParams['axes.xmargin']        = 0
 
 class JobLibLoader(object):
-    def __init__(self):
-        self.date_iter = None
+    def __init__(self,cache_dir='bokeh_cache',clear_cache=False):
+        if clear_cache and os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir)
+
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+
+        self.date_iter  = None
+        self.cache_dir  = cache_dir
+
+        self.sDate      = datetime.date(2018,11,1)
+        self.eDate      = datetime.date(2019,4,30)
 
     def _load_data(self):
         ################################################################################
@@ -56,7 +66,53 @@ class JobLibLoader(object):
         date_iter       = DateIter(data_out_path) #, label_df=label_out_path)
         self.date_iter  = date_iter
 
-jll = JobLibLoader()
+    def load_spots(self, date, x_trim=.08333, y_trim=.08,sigma=4.2):
+        date_str  = date.strftime('%Y%m%d')
+        pkl_fname = '{!s}_spotArray.pkl'.format(date_str)
+        pkl_fpath = os.path.join(self.cache_dir,pkl_fname)
+
+        if not os.path.exists(pkl_fpath):
+            if self.date_iter is None:
+                self._load_data()
+
+            arr = self.date_iter.get_date(date,raise_missing=False)
+            if arr is None:
+                warnings.warn(f'Date {date} has no input')
+                return
+                
+            xl_trim, xrt_trim   = x_trim if isinstance(x_trim, (tuple, list)) else (x_trim, x_trim)
+            yl_trim, yr_trim    = x_trim if isinstance(y_trim, (tuple, list)) else (y_trim, y_trim)
+            xrt, xl             = math.floor(xl_trim * arr.shape[0]), math.floor(xrt_trim * arr.shape[0])
+            yr, yl              = math.floor(yl_trim * arr.shape[1]), math.floor(yr_trim * arr.shape[1])
+            arr                 = arr[xrt:-xl, yr:-yl]
+
+            ranges_km   = arr.coords['height'].values
+            times       = [date + x for x in pd.to_timedelta(arr.coords['time'])]
+            arr         = np.nan_to_num(arr, nan=0)
+            arr         = gaussian_filter(arr.T, sigma=(sigma, sigma))
+
+            # Plotting Code ################################################################ 
+            # X-Limits for plotting
+            x_0     = date + datetime.timedelta(hours=12)
+            x_1     = date + datetime.timedelta(hours=24)
+            xlim    = (x_0, x_1)
+
+            result = {}
+            result['date']      = date
+            result['arr']       = arr
+            result['times']     = times
+            result['ranges_km'] = ranges_km
+            result['xlim']      = xlim    
+
+            print('SAVING: {!s}'.format(pkl_fpath))
+            with open(pkl_fpath,'wb') as fl:
+                pickle.dump(result,fl)
+        else:
+            print('LOADING: {!s}'.format(pkl_fpath))
+            with open(pkl_fpath,'rb') as fl:
+                result = pickle.load(fl)
+
+        return result
 
 def fmt_xaxis(ax,xlim=None,label=True):
     ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
@@ -76,40 +132,6 @@ def plot_heatmap(date,times,ranges_km,arr,xlim=None,cb_pad=0.04):
     ax.set_ylim(500,2000)
     plt.show()
     plt.close()
-
-def load_spots(date, x_trim=.08333, y_trim=.08,sigma=4.2):
-    if jll.date_iter is None:
-        jll._load_data()
-
-    arr = jll.date_iter.get_date(date,raise_missing=False)
-    if arr is None:
-        warnings.warn(f'Date {date} has no input')
-        return
-        
-    xl_trim, xrt_trim   = x_trim if isinstance(x_trim, (tuple, list)) else (x_trim, x_trim)
-    yl_trim, yr_trim    = x_trim if isinstance(y_trim, (tuple, list)) else (y_trim, y_trim)
-    xrt, xl             = math.floor(xl_trim * arr.shape[0]), math.floor(xrt_trim * arr.shape[0])
-    yr, yl              = math.floor(yl_trim * arr.shape[1]), math.floor(yr_trim * arr.shape[1])
-    arr                 = arr[xrt:-xl, yr:-yl]
-
-    ranges_km   = arr.coords['height'].values
-    times       = [date + x for x in pd.to_timedelta(arr.coords['time'])]
-    arr         = np.nan_to_num(arr, nan=0)
-    arr         = gaussian_filter(arr.T, sigma=(sigma, sigma))
-
-    # Plotting Code ################################################################ 
-    # X-Limits for plotting
-    x_0     = date + datetime.timedelta(hours=12)
-    x_1     = date + datetime.timedelta(hours=24)
-    xlim    = (x_0, x_1)
-
-    result = {}
-    result['date']      = date
-    result['arr']       = arr
-    result['times']     = times
-    result['ranges_km'] = ranges_km
-    result['xlim']      = xlim    
-    return result
 
 def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
     # create the function we want to fit
@@ -310,11 +332,16 @@ class SpotHeatMap(object):
         self.img    = img
 
 class BkApp(object):
-    def __init__(self,result):
-        self.result = result
+    def __init__(self,jll=None):
+        if jll is None:
+            jll = JobLibLoader()
+        self.jll = jll
 
     def bkapp(self,doc):
-        result      = self.result
+        date    = datetime.datetime(2018,11,1)
+        result  = self.jll.load_spots(date)
+
+
         date        = result['date']
         times       = result['times']
         ranges_km   = result['ranges_km']
