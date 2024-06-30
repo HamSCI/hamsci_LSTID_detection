@@ -278,13 +278,24 @@ class SinFit(object):
         return data
 
 class SpotHeatMap(object):
-    def __init__(self, result, fig):
-        date        = result['date']
-        times       = result['times']
-        ranges_km   = result['ranges_km']
-        image       = result['arr']
+    def __init__(self,jll=None):
+        if jll is None:
+            jll = JobLibLoader()
+        self.jll    = jll
 
-        x_range     = result['xlim']
+        date        = jll.sDate
+
+        data        = jll.load_spots(date)
+        times       = data['times']
+        
+        fig         = figure()
+
+        date        = data['date']
+        times       = data['times']
+        ranges_km   = data['ranges_km']
+        image       = data['arr']
+
+        x_range     = data['xlim']
         y_range     = (min(ranges_km), max(ranges_km))
         title       = date.strftime('%Y %b %d')
         
@@ -307,39 +318,31 @@ class SpotHeatMap(object):
 
         self.fig    = fig
         self.img    = img
+        self.data   = data
 
 class BkApp(object):
     def __init__(self,jll=None):
-        if jll is None:
-            jll = JobLibLoader()
         self.jll = jll
 
     def bkapp(self,doc):
-        jll     = self.jll
-        date    = jll.sDate
-
-        result  = jll.load_spots(date)
-        times   = result['times']
-        
-        fig     = figure()
-        shp     = SpotHeatMap(result,fig)
-        sin_fit = SinFit(times,fig)
+        shp     = SpotHeatMap(jll=self.jll)
+        sin_fit = SinFit(shp.data['times'],shp.fig)
 
         def cb_date_picker(attr,old,new):
             """
             Callback function for the date picker.
             """
-            fig.title.text   = new
+            shp.fig.title.text   = new
         
         header = []
         header.append(bokeh.models.Button(label="Back", button_type="success"))
-        date_picker = bokeh.models.DatePicker(value=jll.sDate, min_date=jll.sDate, max_date=jll.eDate)
+        date_picker = bokeh.models.DatePicker(value=shp.jll.sDate, min_date=shp.jll.sDate, max_date=shp.jll.eDate)
         date_picker.on_change('value', cb_date_picker)
         header.append(date_picker)
         header.append(bokeh.models.Button(label="Forward", button_type="success"))
         header  = bokeh.layouts.row(*header)
 
-        row     = bokeh.layouts.row(sin_fit.widgets,fig,height=1000)
+        row     = bokeh.layouts.row(sin_fit.widgets,shp.fig,height=1000)
         lyt     = bokeh.layouts.column(header,row,sizing_mode='stretch_both')
         doc.add_root(lyt)
         
