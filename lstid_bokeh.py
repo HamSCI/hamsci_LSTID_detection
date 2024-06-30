@@ -47,8 +47,8 @@ class JobLibLoader(object):
         self.date_iter  = None
         self.cache_dir  = cache_dir
 
-        self.sDate      = datetime.date(2018,11,1)
-        self.eDate      = datetime.date(2019,4,30)
+        self.sDate      = datetime.datetime(2018,11,1)
+        self.eDate      = datetime.datetime(2019,4,30)
 
     def _load_data(self):
         ################################################################################
@@ -293,6 +293,9 @@ class SpotHeatMap(object):
 
     def update_heatmap(self,date):
         fig         = self.fig
+        if hasattr(self,'img'):
+            fig.renderers.remove(self.img)
+
         data        = self.jll.load_spots(date)
         self.data   = data
 
@@ -300,28 +303,36 @@ class SpotHeatMap(object):
         ranges_km   = data['ranges_km']
         image       = data['arr']
 
-        x_range     = data['xlim']
-        y_range     = (min(ranges_km), max(ranges_km))
-        title       = date.strftime('%Y %b %d')
-        
-        fig.x_range.start   = x_range[0]
-        fig.x_range.end     = x_range[1]
-        fig.y_range.start   = y_range[0]
-        fig.y_range.end     = y_range[1]
-        fig.title.text      = title
-        fig.xaxis.formatter=bokeh.models.DatetimeTickFormatter()
-
-        yy          = min(ranges_km)
-        dh          = np.ptp(ranges_km)
         xx          = min(times)
         dw          = max(times) - min(times)
-        cmapper     = bokeh.models.LinearColorMapper(palette="Viridis256", low=0, high=10)
-        img         = fig.image(image=[image], color_mapper=cmapper,dh=dh, dw=dw, x=xx, y=yy)
+        yy          = min(ranges_km)
+        dh          = np.ptp(ranges_km)
+        if not hasattr(self,'cmapper'):
+            self.cmapper     = bokeh.models.LinearColorMapper(palette="Viridis256", low=0, high=10)
+        self.img    = fig.image(image=[image], color_mapper=self.cmapper,dh=dh, dw=dw, x=xx, y=yy)
 
-        color_bar   = img.construct_color_bar(padding=1)
-        fig.add_layout(color_bar, "right")
+        if not hasattr(self,'color_bar'):
+            self.color_bar   = self.img.construct_color_bar(padding=1)
+            fig.add_layout(self.color_bar, "right")
 
-        self.img    = img
+        fig.x_range.start   = data['xlim'][0]
+        fig.x_range.end     = data['xlim'][1]
+        fig.y_range.start   = min(ranges_km)
+        fig.y_range.end     = max(ranges_km)
+        fig.title.text      = date.strftime('%Y %b %d')
+        fig.xaxis.formatter = bokeh.models.DatetimeTickFormatter()
+
+    def date_picker(self):
+        date_picker = bokeh.models.DatePicker(value=self.jll.sDate.date(), min_date=self.jll.sDate.date(), max_date=self.jll.eDate.date())
+        date_picker.on_change('value', self.cb_date_picker)
+        return date_picker
+
+    def cb_date_picker(self,attr,old,new):
+        """
+        Callback function for the date picker.
+        """
+        date    = datetime.datetime.fromisoformat(new)
+        self.update_heatmap(date)
 
 class BkApp(object):
     def __init__(self,jll=None):
@@ -331,16 +342,9 @@ class BkApp(object):
         shp     = SpotHeatMap(jll=self.jll)
         sin_fit = SinFit(shp.data['times'],shp.fig)
 
-        def cb_date_picker(attr,old,new):
-            """
-            Callback function for the date picker.
-            """
-            shp.fig.title.text   = new
-        
         header = []
         header.append(bokeh.models.Button(label="Back", button_type="success"))
-        date_picker = bokeh.models.DatePicker(value=shp.jll.sDate, min_date=shp.jll.sDate, max_date=shp.jll.eDate)
-        date_picker.on_change('value', cb_date_picker)
+        date_picker = shp.date_picker()
         header.append(date_picker)
         header.append(bokeh.models.Button(label="Forward", button_type="success"))
         header  = bokeh.layouts.row(*header)
