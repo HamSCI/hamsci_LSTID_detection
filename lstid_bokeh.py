@@ -318,6 +318,17 @@ class SpotHeatMap(object):
         ranges_km   = result['ranges_km']
         image       = result['arr']
 
+        x_range     = result['xlim']
+        y_range     = (min(ranges_km), max(ranges_km))
+        title       = date.strftime('%Y %b %d')
+        
+        fig.x_range.start   = x_range[0]
+        fig.x_range.end     = x_range[1]
+        fig.y_range.start   = y_range[0]
+        fig.y_range.end     = y_range[1]
+        fig.title           = title
+        fig.xaxis.formatter=bokeh.models.DatetimeTickFormatter()
+
         yy          = min(ranges_km)
         dh          = np.ptp(ranges_km)
         xx          = min(times)
@@ -338,27 +349,20 @@ class BkApp(object):
         self.jll = jll
 
     def bkapp(self,doc):
-        date    = datetime.datetime(2018,11,1)
-        result  = self.jll.load_spots(date)
+        jll     = self.jll
+        date    = jll.sDate
 
-
-        date        = result['date']
-        times       = result['times']
-        ranges_km   = result['ranges_km']
-        image       = result['arr']
+        result  = jll.load_spots(date)
+        times   = result['times']
         
-        x_range     = result['xlim']
-        y_range     = (min(ranges_km), max(ranges_km))
-        title       = date.strftime('%Y %b %d')
+        fig     = figure()
+        shp     = SpotHeatMap(result,fig)
+        sin_fit = SinFit(times,fig)
         
-        fig         = figure(x_range=x_range, y_range=y_range, title=title)
-        shp         = SpotHeatMap(result,fig)
-        sin_fit     = SinFit(times,fig)
-        
-        # heading fills available width
-#        heading = bokeh.models.Div(..., height=80, sizing_mode="stretch_width")
         header = []
         header.append(bokeh.models.Button(label="Back", button_type="success"))
+        date_picker = bokeh.models.DatePicker(value=jll.sDate, min_date=jll.sDate, max_date=jll.eDate)
+        header.append(date_picker)
         header.append(bokeh.models.Button(label="Forward", button_type="success"))
         header  = bokeh.layouts.row(*header)
 
