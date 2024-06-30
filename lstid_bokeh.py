@@ -393,10 +393,25 @@ class BkApp(object):
         date_picker = bokeh.models.DatePicker(value=shp.jll.sDate.date(), min_date=shp.jll.sDate.date(), max_date=shp.jll.eDate.date())
         date_picker.on_change('value', cb_date_picker)
 
+        def cb_dateBack():
+            currentDay  = datetime.date.fromisoformat(date_picker.value)
+            newDay      = currentDay - datetime.timedelta(days=1)
+            date_picker.value = newDay.isoformat()
+
+        def cb_dateFwd():
+            currentDay  = datetime.date.fromisoformat(date_picker.value)
+            newDay      = currentDay + datetime.timedelta(days=1)
+            date_picker.value = newDay.isoformat()
+
+        button_back = bokeh.models.Button(label="Back", button_type="success")
+        button_back.on_event('button_click',cb_dateBack)
+        button_fwd  = bokeh.models.Button(label="Forward", button_type="success")
+        button_fwd.on_event('button_click',cb_dateFwd)
+
         header = []
-        header.append(bokeh.models.Button(label="Back", button_type="success"))
+        header.append(button_back)
         header.append(date_picker)
-        header.append(bokeh.models.Button(label="Forward", button_type="success"))
+        header.append(button_fwd)
         header  = bokeh.layouts.row(*header)
 
         row     = bokeh.layouts.row(sin_fit.widgets,shp.fig,height=1000)
