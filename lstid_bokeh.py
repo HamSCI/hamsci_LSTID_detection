@@ -10,6 +10,7 @@ import xarray as xr
 import joblib
 import math
 import datetime
+import calendar
 import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -35,6 +36,16 @@ plt.rcParams['font.weight']         = 'bold'
 plt.rcParams['axes.titleweight']    = 'bold'
 plt.rcParams['axes.labelweight']    = 'bold'
 plt.rcParams['axes.xmargin']        = 0
+
+
+def dt2ts(dt):
+    """Converts a datetime object to UTC timestamp
+
+    naive datetime will be considered UTC.
+
+    """
+
+    return calendar.timegm(dt.utctimetuple())
 
 class JobLibLoader(object):
     def __init__(self,cache_dir='bokeh_cache',clear_cache=False):
@@ -147,20 +158,15 @@ class SinFit(object):
                  T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,
                  slope_kmph=0,pivot_hr=0,
                  sTime=None,eTime=None):
+        self.fig            = fig
 
-        # Define time arrays and parameters.
-        t0          = min(times)
-        tt_sec      = np.array([(x-t0).total_seconds() for x in times])
+        self._calc_times(times)
 
         if sTime is None:
-            sTime = min(times)
+            sTime = min(self.times)
 
         if eTime is None:
-            eTime = max(times)
-
-        self.times      = np.array(times)
-        self.tt_sec     = tt_sec
-        self.t0         = t0
+            eTime = max(self.times)
 
         # Define initial sinusoid parameters.
         p0  = {}
@@ -176,13 +182,7 @@ class SinFit(object):
 
         # Calculate initial sinusoid.
         data                = self.sin()
-        source              = ColumnDataSource(data=data)
-        self.source         = source
-
-        # Plot sinusoid on figure.
-        line                = fig.line('time','curve',source=source,line_color='white',line_width=2,line_dash='dashed')
-        self.fig            = fig
-        self.line           = line
+        self.plot_line(data)
 
         # Define sliders to adjust sinusoid parameters.
         slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
@@ -214,6 +214,7 @@ class SinFit(object):
                             value=(self.params['sTime'],self.params['eTime']),
                              step=(60*1000), title="Datetime Range",sizing_mode='stretch_both')
         slider_dtRange.on_change('value', self.cb_dtRange)
+        self.slider_dtRange = slider_dtRange
 
         # Put all sliders into a Bokeh column layout.
         col_objs    = []
@@ -225,6 +226,35 @@ class SinFit(object):
         col_objs.append(slider_pivot_hr)
         col_objs.append(slider_dtRange)
         self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
+
+    def update_dtSlider(self):
+        x0 = dt2ts(min(self.times))*1000.
+        x1 = dt2ts(max(self.times))*1000.
+
+        self.slider_dtRange.start = x0
+        self.slider_dtRange.end   = x1
+        self.slider_dtRange.value = (x0,x1)
+
+    def plot_line(self,data):    
+        if hasattr(self,'line'):
+            self.fig.renderers.remove(self.line)
+            del self.line
+            del self.source
+
+        source              = ColumnDataSource(data=data)
+        line                = self.fig.line('time','curve',source=source,line_color='red',line_width=2,line_dash='dashed')
+
+        self.source         = source
+        self.line           = line
+
+    def _calc_times(self,times):
+        # Define time arrays and parameters.
+        t0          = min(times)
+        tt_sec      = np.array([(x-t0).total_seconds() for x in times])
+
+        self.times      = np.array(times)
+        self.tt_sec     = tt_sec
+        self.t0         = t0
 
     def cb_slider(self,attr,old,new,param):
         """
@@ -242,12 +272,16 @@ class SinFit(object):
         source_new          = self.sin(sTime=sTime,eTime=eTime)
         self.source.data    = ColumnDataSource.from_df(source_new)
 
-    def sin(self,**kwArgs):
+    def sin(self,times=None,**kwArgs):
         """
         Calculate a sinusoid using the parameters stored in self.params.
 
         Any self.params item can be updated by passing a keyword argument.
         """
+
+        if times is not  None:
+            self._calc_times(times)
+
         times       = self.times
         tt_sec      = self.tt_sec
 
@@ -289,9 +323,9 @@ class SpotHeatMap(object):
         fig         = figure()
         self.fig    = fig
 
-        self.update_heatmap(date)
+        self.draw_heatmap(date)
 
-    def update_heatmap(self,date):
+    def draw_heatmap(self,date):
         fig         = self.fig
         if hasattr(self,'img'):
             fig.renderers.remove(self.img)
@@ -315,24 +349,20 @@ class SpotHeatMap(object):
             self.color_bar   = self.img.construct_color_bar(padding=1)
             fig.add_layout(self.color_bar, "right")
 
-        fig.x_range.start   = data['xlim'][0]
-        fig.x_range.end     = data['xlim'][1]
-        fig.y_range.start   = min(ranges_km)
-        fig.y_range.end     = max(ranges_km)
-        fig.title.text      = date.strftime('%Y %b %d')
+        self.update_ranges()
+    
+    def update_ranges(self):
+        fig = self.fig
+        fig.x_range.start   = self.data['xlim'][0]
+
+        print(self.data['xlim'][0])
+        print(fig.x_range.start)
+
+        fig.x_range.end     = self.data['xlim'][1]
+        fig.y_range.start   = min(self.data['ranges_km'])
+        fig.y_range.end     = max(self.data['ranges_km'])
+        fig.title.text      = self.data['date'].strftime('%Y %b %d')
         fig.xaxis.formatter = bokeh.models.DatetimeTickFormatter()
-
-    def date_picker(self):
-        date_picker = bokeh.models.DatePicker(value=self.jll.sDate.date(), min_date=self.jll.sDate.date(), max_date=self.jll.eDate.date())
-        date_picker.on_change('value', self.cb_date_picker)
-        return date_picker
-
-    def cb_date_picker(self,attr,old,new):
-        """
-        Callback function for the date picker.
-        """
-        date    = datetime.datetime.fromisoformat(new)
-        self.update_heatmap(date)
 
 class BkApp(object):
     def __init__(self,jll=None):
@@ -342,9 +372,29 @@ class BkApp(object):
         shp     = SpotHeatMap(jll=self.jll)
         sin_fit = SinFit(shp.data['times'],shp.fig)
 
+        self.shp = shp
+        self.sin_fit = sin_fit
+
+        def cb_date_picker(attr,old,new):
+            """
+            Callback function for the date picker.
+            """
+            date                = datetime.datetime.fromisoformat(new)
+            shp.draw_heatmap(date)
+
+            times   = shp.data['times']
+            sTime   = min(times)
+            eTime   = max(times)
+            data    = sin_fit.sin(times=times,sTime=sTime,eTime=eTime)
+            sin_fit.plot_line(data)
+            sin_fit.update_dtSlider()
+            shp.update_ranges()
+
+        date_picker = bokeh.models.DatePicker(value=shp.jll.sDate.date(), min_date=shp.jll.sDate.date(), max_date=shp.jll.eDate.date())
+        date_picker.on_change('value', cb_date_picker)
+
         header = []
         header.append(bokeh.models.Button(label="Back", button_type="success"))
-        date_picker = shp.date_picker()
         header.append(date_picker)
         header.append(bokeh.models.Button(label="Forward", button_type="success"))
         header  = bokeh.layouts.row(*header)
