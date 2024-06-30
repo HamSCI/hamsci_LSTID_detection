@@ -278,19 +278,24 @@ class SinFit(object):
         return data
 
 class SpotHeatMap(object):
-    def __init__(self,jll=None):
+    def __init__(self,date=None,jll=None):
         if jll is None:
             jll = JobLibLoader()
         self.jll    = jll
 
-        date        = jll.sDate
+        if date is None:
+            date    = jll.sDate
 
-        data        = jll.load_spots(date)
-        times       = data['times']
-        
         fig         = figure()
+        self.fig    = fig
 
-        date        = data['date']
+        self.update_heatmap(date)
+
+    def update_heatmap(self,date):
+        fig         = self.fig
+        data        = self.jll.load_spots(date)
+        self.data   = data
+
         times       = data['times']
         ranges_km   = data['ranges_km']
         image       = data['arr']
@@ -303,7 +308,7 @@ class SpotHeatMap(object):
         fig.x_range.end     = x_range[1]
         fig.y_range.start   = y_range[0]
         fig.y_range.end     = y_range[1]
-        fig.title           = title
+        fig.title.text      = title
         fig.xaxis.formatter=bokeh.models.DatetimeTickFormatter()
 
         yy          = min(ranges_km)
@@ -316,9 +321,7 @@ class SpotHeatMap(object):
         color_bar   = img.construct_color_bar(padding=1)
         fig.add_layout(color_bar, "right")
 
-        self.fig    = fig
         self.img    = img
-        self.data   = data
 
 class BkApp(object):
     def __init__(self,jll=None):
