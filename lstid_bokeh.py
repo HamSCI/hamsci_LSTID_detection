@@ -1,5 +1,6 @@
 import os
 import shutil
+from functools import partial
 import warnings
 import pickle
 import numpy as np
@@ -186,27 +187,27 @@ class SinFit(object):
         # Define sliders to adjust sinusoid parameters.
         slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
                                      step=10, title="Amplitude [km]",sizing_mode='stretch_both')
-        slider_amplitude_km.on_change('value', self.cb_amplitude_km)
+        slider_amplitude_km.on_change('value', partial(self.cb_slider,param='amplitude_km'))
 
         slider_period = Slider(start=0.1, end=10, value=self.params['T_hr'],
                                step=0.1, title="Period [hr]",sizing_mode='stretch_both')
-        slider_period.on_change('value', self.cb_period)
+        slider_period.on_change('value', partial(self.cb_slider,param='T_hr'))
 
         slider_phase_hr = Slider(start=-10, end=10, value=self.params['phase_hr'],
                                  step=0.1, title="Phase [hr]",sizing_mode='stretch_both')
-        slider_phase_hr.on_change('value', self.cb_phase_hr)
+        slider_phase_hr.on_change('value', partial(self.cb_slider,param='phase_hr'))
 
         slider_offset_km = Slider(start=0, end=3000, value=self.params['offset_km'],
                                   step=10, title="Offset [km]",sizing_mode='stretch_both')
-        slider_offset_km.on_change('value', self.cb_offset_km)
+        slider_offset_km.on_change('value', partial(self.cb_slider,param='offset_km'))
 
         slider_slope_kmph = Slider(start=-1000, end=1000, value=self.params['slope_kmph'],
                                    step=10, title="Slope [km/hr]",sizing_mode='stretch_both')
-        slider_slope_kmph.on_change('value', self.cb_slope_kmph)
+        slider_slope_kmph.on_change('value', partial(self.cb_slider,param='slope_kmph'))
 
         slider_pivot_hr = Slider(start=-10, end=10, value=self.params['pivot_hr'],
                                  step=0.1, title="Pivot [hr]",sizing_mode='stretch_both')
-        slider_pivot_hr.on_change('value', self.cb_pivot_hr)
+        slider_pivot_hr.on_change('value', partial(self.cb_slider,param='pivot_hr'))
 
         slider_dtRange = DatetimeRangeSlider(start=min(self.times), end=max(self.times),
                             format = '%H:%M',
@@ -225,46 +226,11 @@ class SinFit(object):
         col_objs.append(slider_dtRange)
         self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
 
-    def cb_amplitude_km(self,attr,old,new):
+    def cb_slider(self,attr,old,new,param):
         """
-        Callback function for amplitude slider.
+        Callback function for sliders.
         """
-        source_new          = self.sin(amplitude_km=new)
-        self.source.data    = ColumnDataSource.from_df(source_new)
-
-    def cb_period(self,attr,old,new):
-        """
-        Callback function for period slider.
-        """
-        source_new          = self.sin(T_hr=new)
-        self.source.data    = ColumnDataSource.from_df(source_new)
-
-    def cb_phase_hr(self,attr,old,new):
-        """
-        Callback function for phase slider.
-        """
-        source_new          = self.sin(phase_hr=new)
-        self.source.data    = ColumnDataSource.from_df(source_new)
-
-    def cb_offset_km(self,attr,old,new):
-        """
-        Callback function for offset slider.
-        """
-        source_new          = self.sin(offset_km=new)
-        self.source.data    = ColumnDataSource.from_df(source_new)
-
-    def cb_slope_kmph(self,attr,old,new):
-        """
-        Callback function for slope slider.
-        """
-        source_new          = self.sin(slope_kmph=new)
-        self.source.data    = ColumnDataSource.from_df(source_new)
-
-    def cb_pivot_hr(self,attr,old,new):
-        """
-        Callback function for pivot slider.
-        """
-        source_new          = self.sin(pivot_hr=new)
+        source_new          = self.sin(**{param:new})
         self.source.data    = ColumnDataSource.from_df(source_new)
 
     def cb_dtRange(self,attr,old,new):
@@ -358,10 +324,17 @@ class BkApp(object):
         fig     = figure()
         shp     = SpotHeatMap(result,fig)
         sin_fit = SinFit(times,fig)
+
+        def cb_date_picker(attr,old,new):
+            """
+            Callback function for the date picker.
+            """
+            fig.title.text   = new
         
         header = []
         header.append(bokeh.models.Button(label="Back", button_type="success"))
         date_picker = bokeh.models.DatePicker(value=jll.sDate, min_date=jll.sDate, max_date=jll.eDate)
+        date_picker.on_change('value', cb_date_picker)
         header.append(date_picker)
         header.append(bokeh.models.Button(label="Forward", button_type="success"))
         header  = bokeh.layouts.row(*header)
