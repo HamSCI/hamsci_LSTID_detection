@@ -371,9 +371,6 @@ class SpotHeatMap(object):
         xtks    = [1000*dt2ts(date0+datetime.timedelta(hours=hr)) for hr in hrs]
         fig.xaxis.ticker = xtks
 
-        print("data['xlim']: ",self.data['xlim'])
-        print("fig.x_range: ",fig.x_range.start,fig.x_range.end)
-
 class BkApp(object):
     def __init__(self,jll=None):
         self.jll = jll
