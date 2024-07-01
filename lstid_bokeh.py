@@ -242,7 +242,7 @@ class SinFit(object):
             del self.source
 
         source              = ColumnDataSource()
-        line                = self.fig.line('x','y',source=source,line_color='red',line_width=2,line_dash='dashed')
+        line                = self.fig.line('x','y',source=source,line_color='white',line_width=2,line_dash='dashed')
         source.data         = data
 
         self.source         = source
@@ -414,7 +414,7 @@ class BkApp(object):
 
         button_back = bokeh.models.Button(label="Back", button_type="success")
         button_back.on_event('button_click',cb_dateBack)
-        button_fwd  = bokeh.models.Button(label="Forward", button_type="success")
+        button_fwd  = bokeh.models.Button(label="Foreward", button_type="success")
         button_fwd.on_event('button_click',cb_dateFwd)
 
         header = []
