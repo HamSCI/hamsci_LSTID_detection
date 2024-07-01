@@ -241,8 +241,9 @@ class SinFit(object):
             del self.line
             del self.source
 
-        source              = ColumnDataSource(data=data)
-        line                = self.fig.line('time','curve',source=source,line_color='red',line_width=2,line_dash='dashed')
+        source              = ColumnDataSource()
+        line                = self.fig.line('x','y',source=source,line_color='red',line_width=2,line_dash='dashed')
+        source.data         = data
 
         self.source         = source
         self.line           = line
@@ -260,8 +261,7 @@ class SinFit(object):
         """
         Callback function for sliders.
         """
-        source_new          = self.sin(**{param:new})
-        self.source.data    = ColumnDataSource.from_df(source_new)
+        self.source.data = self.sin(**{param:new})
 
     def cb_dtRange(self,attr,old,new):
         """
@@ -269,8 +269,7 @@ class SinFit(object):
         """
         sTime               = datetime.datetime.utcfromtimestamp(new[0]/1000.)
         eTime               = datetime.datetime.utcfromtimestamp(new[1]/1000.)
-        source_new          = self.sin(sTime=sTime,eTime=eTime)
-        self.source.data    = ColumnDataSource.from_df(source_new)
+        self.source.data    = self.sin(sTime=sTime,eTime=eTime)
 
     def sin(self,times=None,**kwArgs):
         """
@@ -307,8 +306,7 @@ class SinFit(object):
         if np.count_nonzero(~tf) > 0:
             result[~tf] = np.nan
 
-        data        = pd.DataFrame({'curve':result},index=times)
-        data.index.name = 'time'
+        data    = {'x':times,'y':result}
         return data
 
 class SpotHeatMap(object):
@@ -320,7 +318,7 @@ class SpotHeatMap(object):
         if date is None:
             date    = jll.sDate
 
-        fig         = figure()
+        fig         = figure(x_range=(0,1),y_range=(0,1))
         self.fig    = fig
 
         self.draw_heatmap(date)
@@ -353,16 +351,28 @@ class SpotHeatMap(object):
     
     def update_ranges(self):
         fig = self.fig
-        fig.x_range.start   = self.data['xlim'][0]
 
-        print(self.data['xlim'][0])
-        print(fig.x_range.start)
+        dt0     = self.data['xlim'][0]
+        dt1     = self.data['xlim'][1]
+        date0   = datetime.datetime(dt0.year,dt0.month,dt0.day)
 
-        fig.x_range.end     = self.data['xlim'][1]
+
+        fig.x_range.start   = dt2ts(dt0)*1000
+        fig.x_range.end     = dt2ts(dt1)*1000
+
         fig.y_range.start   = min(self.data['ranges_km'])
         fig.y_range.end     = max(self.data['ranges_km'])
         fig.title.text      = self.data['date'].strftime('%Y %b %d')
         fig.xaxis.formatter = bokeh.models.DatetimeTickFormatter()
+
+        hr0     = int((dt0-date0).total_seconds()/3600)
+        hr1     = int((dt1-date0).total_seconds()/3600)
+        hrs     = range(hr0,hr1)
+        xtks    = [1000*dt2ts(date0+datetime.timedelta(hours=hr)) for hr in hrs]
+        fig.xaxis.ticker = xtks
+
+        print("data['xlim']: ",self.data['xlim'])
+        print("fig.x_range: ",fig.x_range.start,fig.x_range.end)
 
 class BkApp(object):
     def __init__(self,jll=None):
@@ -388,7 +398,6 @@ class BkApp(object):
             data    = sin_fit.sin(times=times,sTime=sTime,eTime=eTime)
             sin_fit.plot_line(data)
             sin_fit.update_dtSlider()
-            shp.update_ranges()
 
         date_picker = bokeh.models.DatePicker(value=shp.jll.sDate.date(), min_date=shp.jll.sDate.date(), max_date=shp.jll.eDate.date())
         date_picker.on_change('value', cb_date_picker)
