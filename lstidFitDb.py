@@ -5,9 +5,9 @@ import datetime
 import numpy as np
 
 class LSTIDFitDb(object):
-    def __init__(self,db_fname='lstidSinFit.sql',deleteDb=False,db='lstidSinFit'):
+    def __init__(self,db_fname='lstidSinFit.sql',deleteDb=False,table='lstidSinFit'):
         self.db_fname   = db_fname
-        self.db         = db
+        self.table         = table
 
         if os.path.exists(db_fname) and deleteDb:
             os.remove(db_fname)
@@ -16,7 +16,7 @@ class LSTIDFitDb(object):
         crsr    = conn.cursor()
 
         # Drop the lstidSinFit table if already exists.
-        crsr.execute("DROP TABLE IF EXISTS {!s}".format(db))
+        crsr.execute("DROP TABLE IF EXISTS {!s}".format(table))
 
         schema  = {}
         schema['T_hr']          = 'FLOAT'
@@ -31,9 +31,9 @@ class LSTIDFitDb(object):
         self.schema = schema
         
         sch     = ',\n '.join([f'{key} {val}' for key, val in schema.items()])
-        table   = f'CREATE TABLE {db} (\n Date TIMESTAMP NOT NULL,\n {sch}\n);'
+        qry     = f'CREATE TABLE {table} (\n Date TIMESTAMP PRIMARY KEY,\n {sch}\n);'
 
-        crsr.execute(table)
+        crsr.execute(qry)
         print("Table is Ready")
 
         # Close the connection
@@ -42,6 +42,8 @@ class LSTIDFitDb(object):
     def insert_fit(self,date,params):
         params          = params.copy()
         params['Date']  = date
+        params['good_data']     = int(params['good_data'])
+        params['confirm_fit']   = int(params['confirm_fit'])
 
         keys    = []
         vals    = []
@@ -51,7 +53,9 @@ class LSTIDFitDb(object):
             keys.append(key)
             vals.append(val_str)
 
-        qry = 'INSERT INTO {} ({}) VALUES ({})'.format(self.db, ','.join(keys), ','.join(vals)) 
+        keys    = ','.join(keys)
+        vals    = ','.join(vals)
+        qry     = f'REPLACE INTO {self.table} ({keys}) VALUES ({vals})'
 
         conn    = sqlite3.connect(self.db_fname)
         crsr    = conn.cursor()
@@ -65,7 +69,7 @@ class LSTIDFitDb(object):
 
         p0      = {}
         for key,dtype in self.schema.items():
-            qry     = f'SELECT {key} FROM {self.db} WHERE Date = "{date}";'
+            qry     = f'SELECT {key} FROM {self.table} WHERE Date = "{date}";'
             crsr.execute(qry)
             result  = crsr.fetchall()[0][0]
 
@@ -85,8 +89,8 @@ if __name__ == '__main__':
     ldb = LSTIDFitDb()
 
     sDate = datetime.datetime(2018,11,1) 
-#    eDate = datetime.datetime(2018,11,1) 
-    eDate = datetime.datetime(2019,5,1) 
+    eDate = datetime.datetime(2018,11,1) 
+#    eDate = datetime.datetime(2019,5,1) 
     dates = [sDate]
     while dates[-1] < eDate:
         dates.append(dates[-1]+datetime.timedelta(days=1))
@@ -103,7 +107,6 @@ if __name__ == '__main__':
         p0['eTime']         = date + datetime.timedelta(hours=23)
         p0['good_data']     = True
         p0['confirm_fit']   = False
-
         ldb.insert_fit(date,p0)
 
     print()
