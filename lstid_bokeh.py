@@ -37,7 +37,6 @@ plt.rcParams['axes.titleweight']    = 'bold'
 plt.rcParams['axes.labelweight']    = 'bold'
 plt.rcParams['axes.xmargin']        = 0
 
-
 def dt2ts(dt):
     """Converts a datetime object to UTC timestamp
 
@@ -157,7 +156,26 @@ class SinFit(object):
     def __init__(self,times,fig,
                  T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,
                  slope_kmph=0,pivot_hr=0,
-                 sTime=None,eTime=None):
+                 sTime=None,eTime=None,
+                 good_fit=True,confirm_fit=False):
+        """
+        Class for fitting a monchromatic sinusoid to ham radio spot data.
+        
+        The following model is used:
+            phase_rad   = (2.*np.pi) * (phase_hr / T_hr) 
+            freq        = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+            result      = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km 
+        
+        T_hr:           Period in hours (float)
+        amplitude_km:   Amplitude in kilometers (float)
+        phase_hr:       phase in hours (float)
+        offset_km:      Offset in kilometers (float)
+        slope_kmph:     Slope in kilometers per hour (float)
+        sTime:          Start time of sinusoid. All points before sTime will be set to np.nan. (datetime.datetime object)
+        eTime:          End time of sinusoid All points after eTime will be set to np.nan. (datetime.datetime object)
+        good_fit:       True if it is possible to fit sinusoid to data. If False, all points set to np.nan. (boolean)
+        confirm_fit:    A human has manually confirmed that the fit is good. (boolean).
+        """
         self.fig            = fig
 
         self._calc_times(times)
