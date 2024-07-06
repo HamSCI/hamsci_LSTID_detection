@@ -399,6 +399,27 @@ class SpotHeatMap(object):
         xtks    = [1000*dt2ts(date0+datetime.timedelta(hours=hr)) for hr in hrs]
         fig.xaxis.ticker = xtks
 
+class SaveDbButton(object):
+    def __init__(self,shp,sin_fit,ldb):
+        """
+        shp:        SpotHeatMap Object
+        sin_fit:    SinFit Object
+        ldb:        LSTIDFitDb Object
+        """
+        self.shp        = shp
+        self.sin_fit    = sin_fit
+        self.ldb        = ldb
+
+        button  = bokeh.models.Button(label="Save Fit to Database", button_type="danger")
+        button.on_event('button_click',self.cb_saveDb)
+        self.button     = button
+
+    def cb_saveDb(self):
+        self.ldb.insert_fit(self.shp.data['date'],self.sin_fit.params)
+        self.button.label       = 'Saved to dB'
+        self.button.button_type = 'success'
+
+
 class BkApp(object):
     def __init__(self,jll=None):
         self.jll = jll
@@ -445,23 +466,19 @@ class BkApp(object):
             newDay      = currentDay + datetime.timedelta(days=1)
             date_picker.value = newDay.isoformat()
 
-        def cb_saveDb():
-            ldb.insert_fit(shp.data['date'],sin_fit.params)
-
         button_back = bokeh.models.Button(label="Back", button_type="primary")
         button_back.on_event('button_click',cb_dateBack)
 
         button_fwd  = bokeh.models.Button(label="Foreward", button_type="primary")
         button_fwd.on_event('button_click',cb_dateFwd)
 
-        button_saveDb = bokeh.models.Button(label="Save Fit to Database", button_type="danger")
-        button_saveDb.on_event('button_click',cb_saveDb)
+        saveDb  = SaveDbButton(shp,sin_fit,ldb)
 
         header = []
         header.append(button_back)
         header.append(date_picker)
         header.append(button_fwd)
-        header.append(button_saveDb)
+        header.append(saveDb.button)
         header  = bokeh.layouts.row(*header)
 
         row     = bokeh.layouts.row(sin_fit.widgets,shp.fig,height=1000)
