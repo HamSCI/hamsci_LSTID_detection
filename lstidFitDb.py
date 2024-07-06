@@ -22,13 +22,14 @@ class LSTIDFitDb(object):
         self.schema             = schema
     
         if os.path.exists(db_fname) and deleteDb:
-            while True:
-                confirm = input(f'Are you sure you want to delete "{db_fname}"? [YES/no] ')
-                if confirm == 'YES':
-                    os.remove(db_fname)
-                    break
-                elif confirm == 'no':
-                    break
+#            while True:
+#                confirm = input(f'Are you sure you want to delete "{db_fname}"? [YES/no] ')
+#                if confirm == 'YES':
+#                    os.remove(db_fname)
+#                    break
+#                elif confirm == 'no':
+#                    break
+            os.remove(db_fname)
 
         if not os.path.exists(db_fname):
             self.create_table()
@@ -79,6 +80,10 @@ class LSTIDFitDb(object):
         for key,dtype in self.schema.items():
             qry     = f'SELECT {key} FROM {self.table} WHERE Date = "{date}";'
             crsr.execute(qry)
+            result  = crsr.fetchall()
+            if len(result) == 0:
+                return {} # Return empty dictionary if no record.
+
             result  = crsr.fetchall()[0][0]
 
             if  dtype == 'TIMESTAMP':
@@ -99,6 +104,7 @@ if __name__ == '__main__':
     sDate = datetime.datetime(2018,11,1) 
     eDate = datetime.datetime(2018,11,1) 
 #    eDate = datetime.datetime(2019,5,1) 
+
     dates = [sDate]
     while dates[-1] < eDate:
         dates.append(dates[-1]+datetime.timedelta(days=1))
