@@ -157,7 +157,7 @@ class SinFit(object):
                  T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,
                  slope_kmph=0,
                  sTime=None,eTime=None,
-                 good_fit=True,confirm_fit=False):
+                 good_data=True,confirm_fit=False):
         """
         Class for fitting a monchromatic sinusoid to ham radio spot data.
         
@@ -171,10 +171,13 @@ class SinFit(object):
         phase_hr:       phase in hours (float)
         offset_km:      Offset in kilometers (float)
         slope_kmph:     Slope in kilometers per hour (float)
-        sTime:          Start time of sinusoid. All points before sTime will be set to np.nan. (datetime.datetime object)
-        eTime:          End time of sinusoid All points after eTime will be set to np.nan. (datetime.datetime object)
-        good_fit:       True if it is possible to fit sinusoid to data. If False, all points set to np.nan. (boolean)
-        confirm_fit:    A human has manually confirmed that the fit is good. (boolean).
+        sTime:          Start time of sinusoid.
+                            All points before sTime will be set to np.nan. (datetime.datetime object)
+        eTime:          End time of sinusoid.
+                            All points after eTime will be set to np.nan. (datetime.datetime object)
+        good_data:      True if amateur radio data is suffiecient to make an LSTID determination.
+                            If False, all points set to np.nan. (boolean)
+        confirm_fit:    A human has manually confirmed that the fit is good. (boolean)
         """
         self.fig            = fig
 
@@ -195,6 +198,8 @@ class SinFit(object):
         p0['slope_kmph']    = slope_kmph
         p0['sTime']         = sTime
         p0['eTime']         = eTime
+        p0['good_data']     = good_data
+        p0['confirm_fit']   = confirm_fit
         self.params         = p0
 
         # Calculate initial sinusoid.
@@ -229,6 +234,12 @@ class SinFit(object):
         slider_dtRange.on_change('value', self.cb_dtRange)
         self.slider_dtRange = slider_dtRange
 
+        checkbox_good_data   = bokeh.models.Checkbox(label='Good Data',active=self.params['good_data'])
+        checkbox_good_data.on_change('active', partial(self.cb_slider,param='good_data'))
+
+        checkbox_confirm_fit = bokeh.models.Checkbox(label='Confirm Fit',active=self.params['confirm_fit'])
+        checkbox_confirm_fit.on_change('active', partial(self.cb_slider,param='confirm_fit'))
+
         # Put all sliders into a Bokeh column layout.
         col_objs    = []
         col_objs.append(slider_amplitude_km)
@@ -237,6 +248,8 @@ class SinFit(object):
         col_objs.append(slider_offset_km)
         col_objs.append(slider_slope_kmph)
         col_objs.append(slider_dtRange)
+        col_objs.append(checkbox_good_data)
+        col_objs.append(checkbox_confirm_fit)
         self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
 
     def update_dtSlider(self):
@@ -313,6 +326,9 @@ class SinFit(object):
         tf = np.logical_and(times >= sTime, times <= eTime)
         if np.count_nonzero(~tf) > 0:
             result[~tf] = np.nan
+
+        if not p0['good_data']:
+            result[:] = np.nan
 
         data    = {'x':times,'y':result}
         return data
