@@ -255,14 +255,6 @@ class SinFit(object):
         data                = self.sin()
         self.plot_line(data)
 
-    def update_dtSlider(self):
-        x0 = dt2ts(min(self.times))*1000.
-        x1 = dt2ts(max(self.times))*1000.
-
-        self.widgetDict['slider_dtRange'].start = x0
-        self.widgetDict['slider_dtRange'].end   = x1
-        self.widgetDict['slider_dtRange'].value = (x0,x1)
-
     def update_widgets(self):
         """
         Update all of the widget values to the current self.params values.
@@ -273,7 +265,14 @@ class SinFit(object):
         for wdKey,widget in wd.items():
             wdType, pKey    = wdKey.split('_',1)
             if pKey == 'dtRange':
-                continue
+                sTime   = p0.get('sTime',min(self.times))
+                eTime   = p0.get('eTime',max(self.times))
+                x0 = dt2ts(sTime)*1000.
+                x1 = dt2ts(eTime)*1000.
+
+                self.widgetDict['slider_dtRange'].start = x0
+                self.widgetDict['slider_dtRange'].end   = x1
+                self.widgetDict['slider_dtRange'].value = (x0,x1)
             elif wdType == 'slider':
                 widget.value = p0[pKey]
             elif wdType == 'checkbox':
@@ -495,7 +494,6 @@ class BkApp(object):
             saveDb.current_params   = p0.copy()
             data    = sin_fit.sin(times=times,**p0)
             sin_fit.plot_line(data)
-            sin_fit.update_dtSlider()
 
         date_picker = bokeh.models.DatePicker(value=shp.jll.sDate.date(), min_date=shp.jll.sDate.date(), max_date=shp.jll.eDate.date())
         date_picker.on_change('value', cb_date_picker)
