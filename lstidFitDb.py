@@ -7,16 +7,7 @@ import numpy as np
 class LSTIDFitDb(object):
     def __init__(self,db_fname='lstidSinFit.sql',deleteDb=False,table='lstidSinFit'):
         self.db_fname   = db_fname
-        self.table         = table
-
-        if os.path.exists(db_fname) and deleteDb:
-            os.remove(db_fname)
-        
-        conn    = sqlite3.connect(self.db_fname)
-        crsr    = conn.cursor()
-
-        # Drop the lstidSinFit table if already exists.
-        crsr.execute("DROP TABLE IF EXISTS {!s}".format(table))
+        self.table      = table
 
         schema  = {}
         schema['T_hr']          = 'FLOAT'
@@ -28,16 +19,33 @@ class LSTIDFitDb(object):
         schema['eTime']         = 'TIMESTAMP'
         schema['good_data']     = 'INT'
         schema['confirm_fit']   = 'INT'
-        self.schema = schema
+        self.schema             = schema
+    
+        if os.path.exists(db_fname) and deleteDb:
+            while True:
+                confirm = input(f'Are you sure you want to delete "{db_fname}"? [YES/no] ')
+                if confirm == 'YES':
+                    os.remove(db_fname)
+                    break
+                elif confirm == 'no':
+                    break
+
+        if not os.path.exists(db_fname):
+            self.create_table()
         
-        sch     = ',\n '.join([f'{key} {val}' for key, val in schema.items()])
-        qry     = f'CREATE TABLE {table} (\n Date TIMESTAMP PRIMARY KEY,\n {sch}\n);'
+    def create_table(self):
+        conn    = sqlite3.connect(self.db_fname)
+        crsr    = conn.cursor()
 
+        # Drop the lstidSinFit table if already exists.
+        crsr.execute("DROP TABLE IF EXISTS {!s}".format(self.table))
+        
+        sch     = ',\n '.join([f'{key} {val}' for key, val in self.schema.items()])
+        qry     = f'CREATE TABLE {self.table} (\n Date TIMESTAMP PRIMARY KEY,\n {sch}\n);'
         crsr.execute(qry)
-        print("Table is Ready")
-
-        # Close the connection
         conn.close()
+
+        print(f'Created table "{self.table}" in SQLite database "{self.db_fname}".')
 
     def insert_fit(self,date,params):
         params          = params.copy()
@@ -86,7 +94,7 @@ class LSTIDFitDb(object):
         return p0
 
 if __name__ == '__main__':
-    ldb = LSTIDFitDb()
+    ldb = LSTIDFitDb(deleteDb=True)
 
     sDate = datetime.datetime(2018,11,1) 
     eDate = datetime.datetime(2018,11,1) 
