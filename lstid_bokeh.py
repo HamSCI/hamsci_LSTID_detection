@@ -284,7 +284,7 @@ class SinFit(object):
 
     def cb_slider(self,attr,old,new,param):
         """
-        Callback function for sliders.
+        Callback function for sliders and checkboxes.
         """
         self.source.data = self.sin(**{param:new})
 
