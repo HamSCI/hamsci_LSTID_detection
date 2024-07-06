@@ -206,53 +206,50 @@ class SinFit(object):
         p0['confirm_fit']   = confirm_fit
         self.params         = p0
 
+        self.widgetDict     = wd = {}
         # Define sliders to adjust sinusoid parameters.
         slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
                                      step=10, title="Amplitude [km]",sizing_mode='stretch_both')
         slider_amplitude_km.on_change('value', partial(self.cb_slider,param='amplitude_km'))
+        wd['slider_amplitude_km']   = slider_amplitude_km
 
-        slider_period = Slider(start=0.1, end=24, value=self.params['T_hr'],
+        slider_T_hr = Slider(start=0.1, end=24, value=self.params['T_hr'],
                                step=0.1, title="Period [hr]",sizing_mode='stretch_both')
-        slider_period.on_change('value', partial(self.cb_slider,param='T_hr'))
+        slider_T_hr.on_change('value', partial(self.cb_slider,param='T_hr'))
+        wd['slider_T_hr']           = slider_T_hr
 
         slider_phase_hr = Slider(start=-10, end=10, value=self.params['phase_hr'],
                                  step=0.1, title="Phase [hr]",sizing_mode='stretch_both')
         slider_phase_hr.on_change('value', partial(self.cb_slider,param='phase_hr'))
+        wd['slider_phase_hr']       = slider_phase_hr
 
         slider_offset_km = Slider(start=0, end=3000, value=self.params['offset_km'],
                                   step=10, title="Offset [km]",sizing_mode='stretch_both')
         slider_offset_km.on_change('value', partial(self.cb_slider,param='offset_km'))
+        wd['slider_offset_km']      = slider_offset_km
 
         slider_slope_kmph = Slider(start=-1000, end=1000, value=self.params['slope_kmph'],
                                    step=10, title="Slope [km/hr]",sizing_mode='stretch_both')
         slider_slope_kmph.on_change('value', partial(self.cb_slider,param='slope_kmph'))
+        wd['slider_slope_kmph']      = slider_slope_kmph
 
         slider_dtRange = DatetimeRangeSlider(start=min(self.times), end=max(self.times),
                             format = '%H:%M',
                             value=(self.params['sTime'],self.params['eTime']),
                              step=(60*1000), title="Datetime Range",sizing_mode='stretch_both')
         slider_dtRange.on_change('value', self.cb_dtRange)
-        self.slider_dtRange = slider_dtRange
+        wd['slider_dtRange']    = slider_dtRange
 
         checkbox_good_data          = bokeh.models.Checkbox(label='Good Data',active=self.params['good_data'])
         checkbox_good_data.on_change('active', partial(self.cb_slider,param='good_data'))
-        self.checkbox_good_data     = checkbox_good_data
+        wd['checkbox_good_data']      = checkbox_good_data
 
-        checkbox_confirm_fit        = bokeh.models.Checkbox(label='Confirm Fit',active=self.params['confirm_fit'])
+        checkbox_confirm_fit            = bokeh.models.Checkbox(label='Confirm Fit',active=self.params['confirm_fit'])
         checkbox_confirm_fit.on_change('active', partial(self.cb_slider,param='confirm_fit'))
-        self.checkbox_confirm_fit   = checkbox_confirm_fit
+        wd['checkbox_confirm_fit']      = checkbox_confirm_fit
 
         # Put all sliders into a Bokeh column layout.
-        col_objs    = []
-        col_objs.append(slider_amplitude_km)
-        col_objs.append(slider_period)
-        col_objs.append(slider_phase_hr)
-        col_objs.append(slider_offset_km)
-        col_objs.append(slider_slope_kmph)
-        col_objs.append(slider_dtRange)
-        col_objs.append(checkbox_good_data)
-        col_objs.append(checkbox_confirm_fit)
-        self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
+        self.widgets = bokeh.layouts.column(*(wd.values()), sizing_mode="fixed", height=400, width=250)
 
         # Calculate initial sinusoid.
         data                = self.sin()
@@ -262,9 +259,25 @@ class SinFit(object):
         x0 = dt2ts(min(self.times))*1000.
         x1 = dt2ts(max(self.times))*1000.
 
-        self.slider_dtRange.start = x0
-        self.slider_dtRange.end   = x1
-        self.slider_dtRange.value = (x0,x1)
+        self.widgetDict['slider_dtRange'].start = x0
+        self.widgetDict['slider_dtRange'].end   = x1
+        self.widgetDict['slider_dtRange'].value = (x0,x1)
+
+    def update_widgets(self):
+        """
+        Update all of the widget values to the current self.params values.
+        """
+        p0  = self.params
+        wd  = self.widgetDict
+
+        for wdKey,widget in wd.items():
+            wdType, pKey    = wdKey.split('_',1)
+            if pKey == 'dtRange':
+                continue
+            elif wdType == 'slider':
+                widget.value = p0[pKey]
+            elif wdType == 'checkbox':
+                widget.active = p0[pKey]
 
     def plot_line(self,data):    
         if hasattr(self,'line'):
@@ -335,18 +348,11 @@ class SinFit(object):
 
         if not p0['good_data']:
             result[:] = np.nan
-            self.checkbox_good_data.active = False
-        else:
-            self.checkbox_good_data.active = True
-
-        if not p0['confirm_fit']:
-            self.checkbox_confirm_fit.active = False
-        else:
-            self.checkbox_confirm_fit.active = True
 
         if hasattr(self,'saveDb'):
             self.saveDb.check_params(p0)
 
+        self.update_widgets()
         data    = {'x':times,'y':result}
         return data
 
