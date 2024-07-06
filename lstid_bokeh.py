@@ -206,10 +206,6 @@ class SinFit(object):
         p0['confirm_fit']   = confirm_fit
         self.params         = p0
 
-        # Calculate initial sinusoid.
-        data                = self.sin()
-        self.plot_line(data)
-
         # Define sliders to adjust sinusoid parameters.
         slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
                                      step=10, title="Amplitude [km]",sizing_mode='stretch_both')
@@ -240,9 +236,11 @@ class SinFit(object):
 
         checkbox_good_data   = bokeh.models.Checkbox(label='Good Data',active=self.params['good_data'])
         checkbox_good_data.on_change('active', partial(self.cb_slider,param='good_data'))
+        self.checkbox_good_data = checkbox_good_data
 
         checkbox_confirm_fit = bokeh.models.Checkbox(label='Confirm Fit',active=self.params['confirm_fit'])
         checkbox_confirm_fit.on_change('active', partial(self.cb_slider,param='confirm_fit'))
+        self.checkbox_confirm_fit = checkbox_confirm_fit
 
         # Put all sliders into a Bokeh column layout.
         col_objs    = []
@@ -255,6 +253,10 @@ class SinFit(object):
         col_objs.append(checkbox_good_data)
         col_objs.append(checkbox_confirm_fit)
         self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
+
+        # Calculate initial sinusoid.
+        data                = self.sin()
+        self.plot_line(data)
 
     def update_dtSlider(self):
         x0 = dt2ts(min(self.times))*1000.
@@ -333,6 +335,17 @@ class SinFit(object):
 
         if not p0['good_data']:
             result[:] = np.nan
+            self.checkbox_good_data.active = False
+        else:
+            self.checkbox_good_data.active = True
+
+        if not p0['confirm_fit']:
+            self.checkbox_confirm_fit.active = False
+        else:
+            self.checkbox_confirm_fit.active = True
+
+        if hasattr(self,'saveDb'):
+            self.saveDb.check_params(p0)
 
         data    = {'x':times,'y':result}
         return data
@@ -384,7 +397,6 @@ class SpotHeatMap(object):
         dt1     = self.data['xlim'][1]
         date0   = datetime.datetime(dt0.year,dt0.month,dt0.day)
 
-
         fig.x_range.start   = dt2ts(dt0)*1000
         fig.x_range.end     = dt2ts(dt1)*1000
 
@@ -406,18 +418,42 @@ class SaveDbButton(object):
         sin_fit:    SinFit Object
         ldb:        LSTIDFitDb Object
         """
-        self.shp        = shp
-        self.sin_fit    = sin_fit
-        self.ldb        = ldb
+        self.shp            = shp
+        self.ldb            = ldb
 
-        button  = bokeh.models.Button(label="Save Fit to Database", button_type="danger")
-        button.on_event('button_click',self.cb_saveDb)
-        self.button     = button
+        self.sin_fit        = sin_fit
+        self.current_params = sin_fit.params.copy() # Save copy of current fit parameters to see if they change.
+        sin_fit.saveDb      = self  # Attach self to sin_fit object so sin_fit can update button color on changes.
+
+        self.button  = bokeh.models.Button(width=200)
+        self.greenButton()
+        self.button.on_event('button_click',self.cb_saveDb)
+
+    def check_params(self,params):
+        if params == self.current_params:
+            self.greenButton()
+        else:
+            self.redButton()
+
+    def redButton(self):
+        """
+        Update button to show that params have changed and need to be saved to the 
+        database.
+        """
+        self.button.label       = 'Save Fit to DB'
+        self.button.button_type = 'danger'
+
+    def greenButton(self):
+        """
+        Update button to show that params are the same and database is current.
+        database.
+        """
+        self.button.label       = 'Saved Successfully'
+        self.button.button_type = 'success'
 
     def cb_saveDb(self):
         self.ldb.insert_fit(self.shp.data['date'],self.sin_fit.params)
-        self.button.label       = 'Saved to dB'
-        self.button.button_type = 'success'
+        self.greenButton()
 
 
 class BkApp(object):
@@ -429,6 +465,7 @@ class BkApp(object):
         ldb     = lstidFitDb.LSTIDFitDb(deleteDb=False) # Create database object.
         p0      = ldb.get_fit(shp.data['date'])         # Get fit parameters from database for initial date.
         sin_fit = SinFit(shp.data['times'],shp.fig,**p0)
+        saveDb  = SaveDbButton(shp,sin_fit,ldb)
 
         self.shp = shp
         self.sin_fit = sin_fit
@@ -448,7 +485,8 @@ class BkApp(object):
 
             if 'eTime' not in p0.keys():
                 p0['eTime'] = max(times)
-
+            
+            saveDb.current_params   = p0.copy()
             data    = sin_fit.sin(times=times,**p0)
             sin_fit.plot_line(data)
             sin_fit.update_dtSlider()
@@ -471,8 +509,6 @@ class BkApp(object):
 
         button_fwd  = bokeh.models.Button(label="Foreward", button_type="primary")
         button_fwd.on_event('button_click',cb_dateFwd)
-
-        saveDb  = SaveDbButton(shp,sin_fit,ldb)
 
         header = []
         header.append(button_back)
