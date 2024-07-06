@@ -155,7 +155,7 @@ def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
 class SinFit(object):
     def __init__(self,times,fig,
                  T_hr=3,amplitude_km=200,phase_hr=0,offset_km=1400.,
-                 slope_kmph=0,pivot_hr=0,
+                 slope_kmph=0,
                  sTime=None,eTime=None,
                  good_fit=True,confirm_fit=False):
         """
@@ -192,7 +192,6 @@ class SinFit(object):
         p0['amplitude_km']  = amplitude_km
         p0['phase_hr']      = phase_hr
         p0['offset_km']     = offset_km
-        p0['pivot_hr']      = pivot_hr
         p0['slope_kmph']    = slope_kmph
         p0['sTime']         = sTime
         p0['eTime']         = eTime
@@ -223,10 +222,6 @@ class SinFit(object):
                                    step=10, title="Slope [km/hr]",sizing_mode='stretch_both')
         slider_slope_kmph.on_change('value', partial(self.cb_slider,param='slope_kmph'))
 
-        slider_pivot_hr = Slider(start=-10, end=10, value=self.params['pivot_hr'],
-                                 step=0.1, title="Pivot [hr]",sizing_mode='stretch_both')
-        slider_pivot_hr.on_change('value', partial(self.cb_slider,param='pivot_hr'))
-
         slider_dtRange = DatetimeRangeSlider(start=min(self.times), end=max(self.times),
                             format = '%H:%M',
                             value=(self.params['sTime'],self.params['eTime']),
@@ -241,7 +236,6 @@ class SinFit(object):
         col_objs.append(slider_phase_hr)
         col_objs.append(slider_offset_km)
         col_objs.append(slider_slope_kmph)
-        col_objs.append(slider_pivot_hr)
         col_objs.append(slider_dtRange)
         self.widgets = bokeh.layouts.column(*col_objs, sizing_mode="fixed", height=400, width=250)
 
@@ -308,17 +302,13 @@ class SinFit(object):
         amplitude_km    = p0['amplitude_km']
         phase_hr        = p0['phase_hr']
         offset_km       = p0['offset_km']
-        pivot_hr        = p0['pivot_hr']
         slope_kmph      = p0['slope_kmph']
         sTime           = p0['sTime']
         eTime           = p0['eTime']
 
-        phase_rad   = (2.*np.pi) * (phase_hr / T_hr) 
-        freq        = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-        result      = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) +  offset_km
-
-        if slope_kmph != 0:
-            result      += (slope_kmph/3600.)*(tt_sec + pivot_hr*3600.)
+        phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
+        freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+        result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
 
         tf = np.logical_and(times >= sTime, times <= eTime)
         if np.count_nonzero(~tf) > 0:
