@@ -9,6 +9,16 @@ class LSTIDFitDb(object):
         self.db_fname   = db_fname
         self.table      = table
 
+        p0  = {}
+        p0['T_hr']          = 3
+        p0['amplitude_km']  = 200
+        p0['phase_hr']      = 0
+        p0['offset_km']     = 1400
+        p0['slope_kmph']    = 0
+        p0['good_data']     = True
+        p0['confirm_fit']   = False
+        self.default_params = p0
+
         schema  = {}
         schema['T_hr']          = 'FLOAT'
         schema['amplitude_km']  = 'FLOAT'
@@ -45,7 +55,6 @@ class LSTIDFitDb(object):
         qry     = f'CREATE TABLE {self.table} (\n Date TIMESTAMP PRIMARY KEY,\n {sch}\n);'
         crsr.execute(qry)
         conn.close()
-
         print(f'Created table "{self.table}" in SQLite database "{self.db_fname}".')
 
     def insert_fit(self,date,params):
@@ -78,13 +87,13 @@ class LSTIDFitDb(object):
 
         p0      = {}
         for key,dtype in self.schema.items():
-            qry     = f'SELECT {key} FROM {self.table} WHERE Date = "{date}";'
+            qry     = f"SELECT {key} FROM {self.table} WHERE Date = '{date}';"
             crsr.execute(qry)
             result  = crsr.fetchall()
             if len(result) == 0:
-                return {} # Return empty dictionary if no record.
+                return self.default_params
 
-            result  = crsr.fetchall()[0][0]
+            result = result[0][0]
 
             if  dtype == 'TIMESTAMP':
                 result  = datetime.datetime.fromisoformat(result)

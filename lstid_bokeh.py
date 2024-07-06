@@ -1,8 +1,10 @@
+#!/usr/bin/env python
 import os
 import shutil
 from functools import partial
 import warnings
 import pickle
+
 import numpy as np
 import numpy.polynomial.polynomial as poly
 import pandas as pd
@@ -30,6 +32,8 @@ from bokeh.transform import linear_cmap
 from bokeh.io import show, output_notebook
 from bokeh.themes import Theme
 from bokeh.sampledata.sea_surface_temperature import sea_surface_temperature
+
+import lstidFitDb
 
 plt.rcParams['font.size']           = 18
 plt.rcParams['font.weight']         = 'bold'
@@ -401,7 +405,9 @@ class BkApp(object):
 
     def bkapp(self,doc):
         shp     = SpotHeatMap(jll=self.jll)
-        sin_fit = SinFit(shp.data['times'],shp.fig)
+        ldb     = lstidFitDb.LSTIDFitDb(deleteDb=False) # Create database object.
+        p0      = ldb.get_fit(shp.data['date'])         # Get fit parameters from database for initial date.
+        sin_fit = SinFit(shp.data['times'],shp.fig,**p0)
 
         self.shp = shp
         self.sin_fit = sin_fit
@@ -413,10 +419,16 @@ class BkApp(object):
             date                = datetime.datetime.fromisoformat(new)
             shp.draw_heatmap(date)
 
+            p0      = ldb.get_fit(date) # Get fit parameters from database.
+
             times   = shp.data['times']
-            sTime   = min(times)
-            eTime   = max(times)
-            data    = sin_fit.sin(times=times,sTime=sTime,eTime=eTime)
+            if 'sTime' not in p0.keys():
+                p0['sTime'] = min(times)
+
+            if 'eTime' not in p0.keys():
+                p0['eTime'] = max(times)
+
+            data    = sin_fit.sin(times=times,**p0)
             sin_fit.plot_line(data)
             sin_fit.update_dtSlider()
 
@@ -433,15 +445,23 @@ class BkApp(object):
             newDay      = currentDay + datetime.timedelta(days=1)
             date_picker.value = newDay.isoformat()
 
-        button_back = bokeh.models.Button(label="Back", button_type="success")
+        def cb_saveDb():
+            ldb.insert_fit(shp.data['date'],sin_fit.params)
+
+        button_back = bokeh.models.Button(label="Back", button_type="primary")
         button_back.on_event('button_click',cb_dateBack)
-        button_fwd  = bokeh.models.Button(label="Foreward", button_type="success")
+
+        button_fwd  = bokeh.models.Button(label="Foreward", button_type="primary")
         button_fwd.on_event('button_click',cb_dateFwd)
+
+        button_saveDb = bokeh.models.Button(label="Save Fit to Database", button_type="danger")
+        button_saveDb.on_event('button_click',cb_saveDb)
 
         header = []
         header.append(button_back)
         header.append(date_picker)
         header.append(button_fwd)
+        header.append(button_saveDb)
         header  = bokeh.layouts.row(*header)
 
         row     = bokeh.layouts.row(sin_fit.widgets,shp.fig,height=1000)
@@ -460,4 +480,3 @@ class BkApp(object):
                     grid_line_dash: [6, 4]
                     # grid_line_color: white
         """, Loader=yaml.FullLoader))
-
