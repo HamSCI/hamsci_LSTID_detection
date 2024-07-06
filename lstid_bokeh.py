@@ -211,7 +211,7 @@ class SinFit(object):
                                      step=10, title="Amplitude [km]",sizing_mode='stretch_both')
         slider_amplitude_km.on_change('value', partial(self.cb_slider,param='amplitude_km'))
 
-        slider_period = Slider(start=0.1, end=10, value=self.params['T_hr'],
+        slider_period = Slider(start=0.1, end=24, value=self.params['T_hr'],
                                step=0.1, title="Period [hr]",sizing_mode='stretch_both')
         slider_period.on_change('value', partial(self.cb_slider,param='T_hr'))
 
