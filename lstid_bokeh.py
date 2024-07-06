@@ -234,13 +234,13 @@ class SinFit(object):
         slider_dtRange.on_change('value', self.cb_dtRange)
         self.slider_dtRange = slider_dtRange
 
-        checkbox_good_data   = bokeh.models.Checkbox(label='Good Data',active=self.params['good_data'])
+        checkbox_good_data          = bokeh.models.Checkbox(label='Good Data',active=self.params['good_data'])
         checkbox_good_data.on_change('active', partial(self.cb_slider,param='good_data'))
-        self.checkbox_good_data = checkbox_good_data
+        self.checkbox_good_data     = checkbox_good_data
 
-        checkbox_confirm_fit = bokeh.models.Checkbox(label='Confirm Fit',active=self.params['confirm_fit'])
+        checkbox_confirm_fit        = bokeh.models.Checkbox(label='Confirm Fit',active=self.params['confirm_fit'])
         checkbox_confirm_fit.on_change('active', partial(self.cb_slider,param='confirm_fit'))
-        self.checkbox_confirm_fit = checkbox_confirm_fit
+        self.checkbox_confirm_fit   = checkbox_confirm_fit
 
         # Put all sliders into a Bokeh column layout.
         col_objs    = []
