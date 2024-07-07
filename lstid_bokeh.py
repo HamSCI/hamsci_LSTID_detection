@@ -419,7 +419,7 @@ class SpotHeatMap(object):
         fig.xaxis.ticker = xtks
 
 class SaveDbButton(object):
-    def __init__(self,shp,sin_fit,ldb):
+    def __init__(self,shp,sin_fit,ldb,in_DB=False):
         """
         shp:        SpotHeatMap Object
         sin_fit:    SinFit Object
@@ -429,12 +429,17 @@ class SaveDbButton(object):
         self.ldb            = ldb
 
         self.sin_fit        = sin_fit
-        self.current_params = sin_fit.params.copy() # Save copy of current fit parameters to see if they change.
         sin_fit.saveDb      = self  # Attach self to sin_fit object so sin_fit can update button color on changes.
 
         self.button  = bokeh.models.Button(width=200)
-        self.greenButton()
         self.button.on_event('button_click',self.cb_saveDb)
+
+        if in_DB:
+            self.greenButton()
+            self.current_params = sin_fit.params.copy() # Save copy of current fit parameters to see if they change.
+        else:
+            self.redButton()
+            self.current_params = None
 
     def check_params(self,params):
         if params == self.current_params:
@@ -468,11 +473,11 @@ class BkApp(object):
         self.jll = jll
 
     def bkapp(self,doc):
-        shp     = SpotHeatMap(jll=self.jll)
-        ldb     = lstidFitDb.LSTIDFitDb(deleteDb=False) # Create database object.
-        p0      = ldb.get_fit(shp.data['date'])         # Get fit parameters from database for initial date.
-        sin_fit = SinFit(shp.data['times'],shp.fig,**p0)
-        saveDb  = SaveDbButton(shp,sin_fit,ldb)
+        shp         = SpotHeatMap(jll=self.jll)
+        ldb         = lstidFitDb.LSTIDFitDb(deleteDb=False) # Create database object.
+        p0, in_DB   = ldb.get_fit(shp.data['date'])         # Get fit parameters from database for initial date.
+        sin_fit     = SinFit(shp.data['times'],shp.fig,**p0)
+        saveDb      = SaveDbButton(shp,sin_fit,ldb,in_DB=in_DB)
 
         self.shp = shp
         self.sin_fit = sin_fit
@@ -481,10 +486,10 @@ class BkApp(object):
             """
             Callback function for the date picker.
             """
-            date                = datetime.datetime.fromisoformat(new)
+            date            = datetime.datetime.fromisoformat(new)
             shp.draw_heatmap(date)
 
-            p0      = ldb.get_fit(date) # Get fit parameters from database.
+            p0, in_DB       = ldb.get_fit(date) # Get fit parameters from database.
 
             times   = shp.data['times']
             if 'sTime' not in p0.keys():
@@ -493,7 +498,11 @@ class BkApp(object):
             if 'eTime' not in p0.keys():
                 p0['eTime'] = max(times)
             
-            saveDb.current_params   = p0.copy()
+            if in_DB:
+                saveDb.current_params   = p0.copy()
+            else:
+                saveDb.current_params   = None
+
             data    = sin_fit.sin(times=times,**p0)
             sin_fit.plot_line(data)
 

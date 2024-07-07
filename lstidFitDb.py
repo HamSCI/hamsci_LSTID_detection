@@ -85,7 +85,7 @@ class LSTIDFitDb(object):
             crsr.execute(qry)
             result  = crsr.fetchall()
             if len(result) == 0:
-                return self.default_params()
+                return (self.default_params(), False) # (params, in_DB)
 
             result = result[0][0]
 
@@ -99,7 +99,7 @@ class LSTIDFitDb(object):
 
         conn.close()
 
-        return p0
+        return (p0, True) # (params, in_DB)
 
 if __name__ == '__main__':
     ldb = LSTIDFitDb(deleteDb=True)
