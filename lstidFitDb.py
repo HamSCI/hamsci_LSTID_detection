@@ -9,16 +9,6 @@ class LSTIDFitDb(object):
         self.db_fname   = db_fname
         self.table      = table
 
-        p0  = {}
-        p0['T_hr']          = 3
-        p0['amplitude_km']  = 200
-        p0['phase_hr']      = 0
-        p0['offset_km']     = 1400
-        p0['slope_kmph']    = 0
-        p0['good_data']     = True
-        p0['confirm_fit']   = False
-        self.default_params = p0
-
         schema  = {}
         schema['T_hr']          = 'FLOAT'
         schema['amplitude_km']  = 'FLOAT'
@@ -32,17 +22,21 @@ class LSTIDFitDb(object):
         self.schema             = schema
     
         if os.path.exists(db_fname) and deleteDb:
-#            while True:
-#                confirm = input(f'Are you sure you want to delete "{db_fname}"? [YES/no] ')
-#                if confirm == 'YES':
-#                    os.remove(db_fname)
-#                    break
-#                elif confirm == 'no':
-#                    break
             os.remove(db_fname)
 
         if not os.path.exists(db_fname):
             self.create_table()
+
+    def default_params(self):
+        p0  = {}
+        p0['T_hr']          = 3
+        p0['amplitude_km']  = 200
+        p0['phase_hr']      = 0
+        p0['offset_km']     = 1400
+        p0['slope_kmph']    = 0
+        p0['good_data']     = True
+        p0['confirm_fit']   = False
+        return p0
         
     def create_table(self):
         conn    = sqlite3.connect(self.db_fname)
@@ -91,7 +85,7 @@ class LSTIDFitDb(object):
             crsr.execute(qry)
             result  = crsr.fetchall()
             if len(result) == 0:
-                return self.default_params
+                return self.default_params()
 
             result = result[0][0]
 

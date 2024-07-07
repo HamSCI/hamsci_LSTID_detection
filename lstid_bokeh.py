@@ -265,13 +265,15 @@ class SinFit(object):
         for wdKey,widget in wd.items():
             wdType, pKey    = wdKey.split('_',1)
             if pKey == 'dtRange':
-                sTime   = p0.get('sTime',min(self.times))
-                eTime   = p0.get('eTime',max(self.times))
+                sliderStart = min(self.times)
+                sliderEnd   = max(self.times)
+                self.widgetDict['slider_dtRange'].start = dt2ts(sliderStart)*1000.
+                self.widgetDict['slider_dtRange'].end   = dt2ts(sliderEnd)*1000.
+
+                sTime = p0['sTime']
+                eTime = p0['eTime']
                 x0 = dt2ts(sTime)*1000.
                 x1 = dt2ts(eTime)*1000.
-
-                self.widgetDict['slider_dtRange'].start = x0
-                self.widgetDict['slider_dtRange'].end   = x1
                 self.widgetDict['slider_dtRange'].value = (x0,x1)
             elif wdType == 'slider':
                 widget.value = p0[pKey]
