@@ -208,7 +208,7 @@ class SinFit(object):
 
         self.widgetDict     = wd = {}
         # Define sliders to adjust sinusoid parameters.
-        slider_amplitude_km = Slider(start=0, end=3000, value=self.params['amplitude_km'],
+        slider_amplitude_km = Slider(start=0, end=1000, value=self.params['amplitude_km'],
                                      step=10, title="Amplitude [km]",sizing_mode='stretch_both')
         slider_amplitude_km.on_change('value', partial(self.cb_slider,param='amplitude_km'))
         wd['slider_amplitude_km']   = slider_amplitude_km
@@ -218,7 +218,7 @@ class SinFit(object):
         slider_T_hr.on_change('value', partial(self.cb_slider,param='T_hr'))
         wd['slider_T_hr']           = slider_T_hr
 
-        slider_phase_hr = Slider(start=-10, end=10, value=self.params['phase_hr'],
+        slider_phase_hr = Slider(start=-25, end=25, value=self.params['phase_hr'],
                                  step=0.1, title="Phase [hr]",sizing_mode='stretch_both')
         slider_phase_hr.on_change('value', partial(self.cb_slider,param='phase_hr'))
         wd['slider_phase_hr']       = slider_phase_hr
