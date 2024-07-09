@@ -173,6 +173,7 @@ class SpotHeatMap_MPL(object):
         png_fpath   = os.path.join(output_dir,png_fname)
 
         result      = jll.load_spots(date)
+        in_DB       = False # Guilty until proven innocent
         if result is not None:
             arr         = result['arr']
             times       = result['times']
@@ -180,11 +181,11 @@ class SpotHeatMap_MPL(object):
             if xlim is None:
                 xlim        = result.get('xlim')
 
-            ldb         = lstidFitDb.LSTIDFitDb(deleteDb=False) # Create database object.
-            p0, in_DB   = ldb.get_fit(shp.data['date'])         # Get fit parameters from database for initial date.
+            ldb         = lstidFitDb.LSTIDFitDb() # Create database object.
+            p0, in_DB   = ldb.get_fit(date)       # Get fit parameters from database for initial date.
 
         # Plot Heatmap #########################
-        fig     = plt.figure(figsize=(14,10))
+        fig     = plt.figure(figsize=(20,10))
         for inx in [0,1]:
             ax      = fig.add_subplot(2,1,inx+1)
             if result is not None:
@@ -200,6 +201,22 @@ class SpotHeatMap_MPL(object):
                 date_str = date.strftime('%Y %b %d')
                 ax.set_title(f'{date_str}\n14 MHz PSKReporter, WSPRNet, & RBN Spots')
                 ax.set_xlabel('')
+
+                if in_DB:
+                    data    = lstid_sin(times,**p0)
+                    ax.plot(data['x'],data['y'],ls='--',lw=2,color='w')
+                    txt = []
+                    for key,val in p0.items():
+                        if key in ['sTime','eTime','good_data','confirm_fit']:
+                            val_str = '{!s}'.format(val)
+                        else:
+                            val_str = '{:0.1f}'.format(val)
+                            
+                        txt.append(f'{key}: {val_str}')
+
+                    dur = (p0['eTime'] - p0['sTime']).total_seconds()/3600.
+                    txt.append('duration: {:0.2f} hr'.format(dur))
+                    ax.text(1.130,1,'\n'.join(txt), transform=ax.transAxes,va='top')
 
         fig.tight_layout()
         fig.savefig(png_fpath,bbox_inches='tight')
@@ -624,4 +641,3 @@ if __name__ == '__main__':
 
     for date in dates:
         shm_mpl = SpotHeatMap_MPL(date)
-        import ipdb; ipdb.set_trace()

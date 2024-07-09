@@ -102,7 +102,7 @@ class LSTIDFitDb(object):
         return (p0, True) # (params, in_DB)
 
 if __name__ == '__main__':
-    ldb = LSTIDFitDb(deleteDb=True)
+    ldb = LSTIDFitDb(deleteDb=False)
 
     sDate = datetime.datetime(2018,11,1) 
     eDate = datetime.datetime(2018,11,1) 
