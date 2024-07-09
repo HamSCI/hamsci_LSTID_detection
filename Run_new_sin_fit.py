@@ -194,9 +194,14 @@ def run_edge_detect(
         data   = sg_edge.values
 
         # Window Limits for FFT analysis.
-        fitWin_0   = date + datetime.timedelta(hours=15)
-        fitWin_1   = date + datetime.timedelta(hours=22,minutes=30)
-        fitWinLim  = (fitWin_0, fitWin_1)
+        roll_win    = 15
+        xx_n = edge_0.rolling(roll_win).std()
+        xx_d = edge_0.rolling(roll_win).mean()
+        stability   = xx_n/xx_d
+
+        fitWin_0    = date + datetime.timedelta(hours=15)
+        fitWin_1    = date + datetime.timedelta(hours=22,minutes=30)
+        fitWinLim   = (fitWin_0, fitWin_1)
 
         tf          = np.logical_and(sg_edge.index >= fitWin_0, sg_edge.index < fitWin_1)
         fit_times   = sg_edge.index[tf].copy()
@@ -244,6 +249,7 @@ def run_edge_detect(
         result['001_windowLimits']  = edge_1
         result['003_sgEdge']        = sg_edge
         result['sin_fit']           = sin_fit
+        result['stability']         = stability
         result['metaData']  = meta  = {}
 
         meta['date']        = date
@@ -255,6 +261,7 @@ def run_edge_detect(
         meta['i_max']       = i_max
         meta['xlim']        = xlim
         meta['winlim']      = winlim
+        meta['fitWinLim']   = fitWinLim
         result['sinFit_T_hr']   = sinFit_T_hr
         result['sinFit_amp']    = sinFit_amp 
         result['sinFit_phase']  = sinFit_phase
@@ -286,6 +293,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     date        = md.get('date')
     xlim        = md.get('xlim')
     winlim      = md.get('winlim')
+    fitWinLim   = md.get('fitWinLim')
 
     arr         = result_dct.get('spotArr')
     med_lines   = result_dct.get('med_lines')
@@ -293,6 +301,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     edge_1      = result_dct.get('001_windowLimits')
     sg_edge     = result_dct.get('003_sgEdge')
     sin_fit     = result_dct.get('sin_fit')
+    stability   = result_dct.get('stability')
 
     ranges_km   = arr.coords['ranges_km']
     arr_times   = [pd.Timestamp(x) for x in arr.coords['datetimes'].values]
@@ -320,7 +329,13 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     sgf_line    = ax.plot(sg_edge.index,sg_edge,lw=2,label='SG Filtered Edge')
     ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='white',lw=3,ls='--')
 
+    ax2 = ax.twinx()
+    ax2.plot(stability.index,stability,lw=2,color='0.5')
+
     for wl in winlim:
+        ax.axvline(wl,color='0.8',ls='--',lw=2)
+
+    for wl in fitWinLim:
         ax.axvline(wl,color='0.8',ls='--',lw=2)
 
     ax.legend(loc='lower right',fontsize='x-small',ncols=4)
