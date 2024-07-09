@@ -331,6 +331,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
 
     ax2 = ax.twinx()
     ax2.plot(stability.index,stability,lw=2,color='0.5')
+    ax2.grid(False)
 
     for wl in winlim:
         ax.axvline(wl,color='0.8',ls='--',lw=2)
