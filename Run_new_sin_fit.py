@@ -190,8 +190,9 @@ def run_edge_detect(
         sg_edge[~tf] = 0
 
         # Sinusoid Fitting
-        tt_sec = np.array([x.total_seconds() for x in (sg_edge.index - sg_edge.index.min())])
-        data   = sg_edge.values
+        t0      = datetime.datetime(date.year,date.month,date.day)
+        tt_sec  = np.array([x.total_seconds() for x in (sg_edge.index - t0)])
+        data    = sg_edge.values
 
         # Window Limits for FFT analysis.
         roll_win    = 15
@@ -208,29 +209,31 @@ def run_edge_detect(
         tt_sec      = tt_sec[tf]
         data        = data[tf]
 
-        guess_freq      = 1./datetime.timedelta(hours=3).total_seconds()
-        guess_amplitude = np.ptp(sg_edge)
-        guess_phase     = 0
-        guess_offset    = np.mean(sg_edge)
+        guess = {}
+        guess['T_hr']           = 3.
+        guess['amplitude_km']   = np.ptp(data)/2.
+        guess['phase_hr']       = 0.
+        guess['offset_km']      = np.mean(data)
+        guess['slope_kmph']     = 0.
 
-        p0=[guess_freq, guess_amplitude, guess_phase, guess_offset]
-
-        # create the function we want to fit
-        def my_sin(tt_sec, freq, amplitude, phase, offset):
-            return np.sin( (2*np.pi*tt_sec*freq )+ phase ) * amplitude + offset
+        def my_sin(tt_sec,T_hr,amplitude_km,phase_hr,offset_km,slope_kmph):
+            phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
+            freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+            result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
+            return result
 
         # now do the fit
-        sinFit = curve_fit(my_sin, tt_sec, data, p0=p0)
-        sinFit_T_hr     = (1./sinFit[0][0]) / 3600.
-        sinFit_amp      = sinFit[0][1]
-        sinFit_phase    = sinFit[0][2]
-        sinFit_offset   = sinFit[0][3]
+        sinFit = curve_fit(my_sin, tt_sec, data, p0=list(guess.values()))
 
-        # we'll use this to plot our first estimate. This might already be good enough for you
-        data_first_guess = my_sin(tt_sec, *p0)
-
+        p0 = {}
+        p0['T_hr']           = sinFit[0][0]
+        p0['amplitude_km']   = sinFit[0][1]
+        p0['phase_hr']       = sinFit[0][2]
+        p0['offset_km']      = sinFit[0][3]
+        p0['slope_kmph']     = sinFit[0][4]
+        
         # recreate the fitted curve using the optimized parameters
-        sin_fit = my_sin(tt_sec, *sinFit[0])
+        sin_fit = my_sin(tt_sec, **p0)
         sin_fit = pd.Series(sin_fit,index=fit_times)
 
         # Package SpotArray into XArray
@@ -249,6 +252,7 @@ def run_edge_detect(
         result['001_windowLimits']  = edge_1
         result['003_sgEdge']        = sg_edge
         result['sin_fit']           = sin_fit
+        result['p0']                = p0
         result['stability']         = stability
         result['metaData']  = meta  = {}
 
@@ -262,10 +266,6 @@ def run_edge_detect(
         meta['xlim']        = xlim
         meta['winlim']      = winlim
         meta['fitWinLim']   = fitWinLim
-        result['sinFit_T_hr']   = sinFit_T_hr
-        result['sinFit_amp']    = sinFit_amp 
-        result['sinFit_phase']  = sinFit_phase
-        result['sinFit_offset'] = sinFit_offset
 
         if not os.path.exists(cache_dir):
             os.mkdir(cache_dir)
