@@ -4,6 +4,8 @@ import shutil
 from functools import partial
 import warnings
 import pickle
+import logging
+logging.basicConfig(level=logging.INFO)
 
 import numpy as np
 import numpy.polynomial.polynomial as poly
@@ -148,13 +150,61 @@ def plot_heatmap(date,times,ranges_km,arr,xlim=None,cb_pad=0.04):
     plt.show()
     plt.close()
 
-def my_sin2(T_hr=3, amplitude=200, phase=0, offset=1400.):
-    # create the function we want to fit
-    freq   = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-    result = amplitude * np.sin( (2*np.pi*tt_sec*freq )+ phase ) + offset
-    data   = pd.DataFrame({'curve':result},index=times)
-    data.index.name = 'time'
-    return data
+class SpotHeatMap_MPL(object):
+    def __init__(self,date,xlim=None,ylim=(750,2750),
+                 cb_pad=0.04,
+                 jll=None,output_dir='output_manualFit'):
+        """
+        Generate a ham radio spot heatmap using MATPLOTLIB for validation of 
+        manually fitted LSTIDs."
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        if jll is None:
+            jll = JobLibLoader()
+        self.jll    = jll
+
+        if date is None:
+            date    = jll.sDate
+
+        date_str    = date.strftime('%Y%m%d')
+        png_fname   = f'{date_str}_manualSpot.png'
+        png_fpath   = os.path.join(output_dir,png_fname)
+
+        result      = jll.load_spots(date)
+        if result is not None:
+            arr         = result['arr']
+            times       = result['times']
+            ranges_km   = result['ranges_km']
+            if xlim is None:
+                xlim        = result.get('xlim')
+
+            ldb         = lstidFitDb.LSTIDFitDb(deleteDb=False) # Create database object.
+            p0, in_DB   = ldb.get_fit(shp.data['date'])         # Get fit parameters from database for initial date.
+
+        # Plot Heatmap #########################
+        fig     = plt.figure(figsize=(14,10))
+        for inx in [0,1]:
+            ax      = fig.add_subplot(2,1,inx+1)
+            if result is not None:
+                mpbl    = ax.pcolormesh(times,ranges_km,arr,cmap='plasma')
+                plt.colorbar(mpbl,aspect=10,pad=cb_pad)
+                fmt_xaxis(ax,xlim)
+            else:
+                ax.text(0.5,0.5,'NO DATA',ha='center',va='center',transform=ax.transAxes)
+            ax.set_ylabel('Range [km]')
+            ax.set_ylim(ylim)
+
+            if inx == 0:
+                date_str = date.strftime('%Y %b %d')
+                ax.set_title(f'{date_str}\n14 MHz PSKReporter, WSPRNet, & RBN Spots')
+                ax.set_xlabel('')
+
+        fig.tight_layout()
+        fig.savefig(png_fpath,bbox_inches='tight')
+        logging.info(f'PLOTTING {png_fpath}')
+        plt.close()
 
 class SinFit(object):
     def __init__(self,times,fig,
@@ -185,7 +235,7 @@ class SinFit(object):
         """
         self.fig            = fig
 
-        self._calc_times(times)
+        self.times  = np.array(times)
 
         if sTime is None:
             sTime = min(self.times)
@@ -293,15 +343,6 @@ class SinFit(object):
         self.source         = source
         self.line           = line
 
-    def _calc_times(self,times):
-        # Define time arrays and parameters.
-        t0          = min(times)
-        tt_sec      = np.array([(x-t0).total_seconds() for x in times])
-
-        self.times      = np.array(times)
-        self.tt_sec     = tt_sec
-        self.t0         = t0
-
     def cb_slider(self,attr,old,new,param):
         """
         Callback function for sliders and checkboxes.
@@ -323,39 +364,64 @@ class SinFit(object):
         Any self.params item can be updated by passing a keyword argument.
         """
 
-        if times is not  None:
-            self._calc_times(times)
-
-        times       = self.times
-        tt_sec      = self.tt_sec
+        if times is not None:
+            self.times  = np.array(times)
+        else:
+            times       = self.times
 
         self.params.update(kwArgs)
         p0              = self.params
-        T_hr            = p0['T_hr']
-        amplitude_km    = p0['amplitude_km']
-        phase_hr        = p0['phase_hr']
-        offset_km       = p0['offset_km']
-        slope_kmph      = p0['slope_kmph']
-        sTime           = p0['sTime']
-        eTime           = p0['eTime']
-
-        phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
-        freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-        result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
-
-        tf = np.logical_and(times >= sTime, times <= eTime)
-        if np.count_nonzero(~tf) > 0:
-            result[~tf] = np.nan
-
-        if not p0['good_data']:
-            result[:] = np.nan
 
         if hasattr(self,'saveDb'):
             self.saveDb.check_params(p0)
 
         self.update_widgets()
-        data    = {'x':times,'y':result}
+        data    = lstid_sin(times,**p0)
         return data
+
+
+def lstid_sin(times,
+              T_hr,amplitude_km,phase_hr,offset_km,slope_kmph,
+              sTime,eTime,good_data,**kwArgs):
+    """
+    Calculate sinusoid that was fit to LSTID data.
+
+    The following model is used:
+        phase_rad   = (2.*np.pi) * (phase_hr / T_hr) 
+        freq        = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+        result      = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km 
+    
+    times:          datetime.datetime vector
+    T_hr:           Period in hours (float)
+    amplitude_km:   Amplitude in kilometers (float)
+    phase_hr:       phase in hours (float)
+    offset_km:      Offset in kilometers (float)
+    slope_kmph:     Slope in kilometers per hour (float)
+    sTime:          Start time of sinusoid.
+                        All points before sTime will be set to np.nan. (datetime.datetime object)
+    eTime:          End time of sinusoid.
+                        All points after eTime will be set to np.nan. (datetime.datetime object)
+    good_data:      True if amateur radio data is suffiecient to make an LSTID determination.
+                        If False, all points set to np.nan. (boolean)
+    """
+
+    times           = np.array(times)
+    t0              = min(times)
+    tt_sec          = np.array([(x-t0).total_seconds() for x in times])
+
+    phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
+    freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+    result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
+
+    tf = np.logical_and(times >= sTime, times <= eTime)
+    if np.count_nonzero(~tf) > 0:
+        result[~tf] = np.nan
+
+    if not good_data:
+        result[:] = np.nan
+
+    data    = {'x':times,'y':result}
+    return data
 
 class SpotHeatMap(object):
     def __init__(self,date=None,jll=None):
@@ -548,3 +614,14 @@ class BkApp(object):
                     grid_line_dash: [6, 4]
                     # grid_line_color: white
         """, Loader=yaml.FullLoader))
+
+if __name__ == '__main__':
+    sDate   = datetime.datetime(2018,11,1)
+    eDate   = datetime.datetime(2019,4,30)
+    dates   = [sDate]
+    while dates[-1] < eDate:
+        dates.append(dates[-1]+datetime.timedelta(days=1))
+
+    for date in dates:
+        shm_mpl = SpotHeatMap_MPL(date)
+        import ipdb; ipdb.set_trace()
