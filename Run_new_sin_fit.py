@@ -193,6 +193,16 @@ def run_edge_detect(
         tt_sec = np.array([x.total_seconds() for x in (sg_edge.index - sg_edge.index.min())])
         data   = sg_edge.values
 
+        # Window Limits for FFT analysis.
+        fitWin_0   = date + datetime.timedelta(hours=15)
+        fitWin_1   = date + datetime.timedelta(hours=22,minutes=30)
+        fitWinLim  = (fitWin_0, fitWin_1)
+
+        tf          = np.logical_and(sg_edge.index >= fitWin_0, sg_edge.index < fitWin_1)
+        fit_times   = sg_edge.index[tf].copy()
+        tt_sec      = tt_sec[tf]
+        data        = data[tf]
+
         guess_freq      = 1./datetime.timedelta(hours=3).total_seconds()
         guess_amplitude = np.ptp(sg_edge)
         guess_phase     = 0
@@ -216,13 +226,7 @@ def run_edge_detect(
 
         # recreate the fitted curve using the optimized parameters
         sin_fit = my_sin(tt_sec, *sinFit[0])
-
-        tf = np.logical_and(sg_edge.index >= winlim[0], sg_edge.index < winlim[1])
-        sin_fit[~tf] = 0
-
-        tmp     = sg_edge.copy()
-        tmp[:]  = sin_fit
-        sin_fit = tmp
+        sin_fit = pd.Series(sin_fit,index=fit_times)
 
         # Package SpotArray into XArray
         daDct               = {}
@@ -314,7 +318,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
 
     ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
     sgf_line    = ax.plot(sg_edge.index,sg_edge,lw=2,label='SG Filtered Edge')
-    ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='red')
+    ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='white',lw=3,ls='--')
 
     for wl in winlim:
         ax.axvline(wl,color='0.8',ls='--',lw=2)
