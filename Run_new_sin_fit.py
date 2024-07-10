@@ -88,6 +88,15 @@ def islandinfo(y, trigger_val, stopind_inclusive=True):
     # Using a stepsize of 2 would get us start and stop indices for each island
     return list(zip(idx[:-1:2], idx[1::2]-int(stopind_inclusive))), lens
 
+def sinusoid(tt_sec,T_hr,amplitude_km,phase_hr,offset_km,slope_kmph):
+    """
+    Sinusoid function that will be fit to data.
+    """
+    phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
+    freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
+    result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
+    return result
+
 def run_edge_detect(
     date,
     x_trim=.08333,
@@ -207,24 +216,28 @@ def run_edge_detect(
 #        sg_edge[tf]  = sg_edge[tf]*np.hanning(np.sum(tf))
         sg_edge[~tf] = 0
 
-        # Sinusoid Fitting
+        # Curve Fit Data ############################################################### 
+
+        # Convert Datetime Objects to Relative Seconds and pull out data
+        # for fitting.
         t0      = datetime.datetime(date.year,date.month,date.day)
         tt_sec  = np.array([x.total_seconds() for x in (sg_edge.index - t0)])
         data    = sg_edge.values
 
-        # Window Limits for FFT analysis.
-        roll_win    = 15
+        # Calculate the rolling Coefficient of Variation and use as a stability parameter
+        # to determine the start and end time of good edge detection.
+        roll_win    = 15 # 15 minute rolling window
         xx_n = edge_1.rolling(roll_win).std()
         xx_d = edge_1.rolling(roll_win).mean()
-        stability   = xx_n/xx_d
+        stability   = xx_n/xx_d # Coefficient of Varation
 
-        stab_thresh = 0.05
+        stab_thresh = 0.05 # Require Coefficient of Variation to be less than 0.05
         tf  = stability < stab_thresh
 
-        # Find ''islands' that meet the stability criteria
+        # Find 'islands' (aka continuous time windows) that meet the stability criteria
         islands, island_lengths  = islandinfo(tf,1)
 
-        # Get the largest island.
+        # Get the longest continuous time window meeting the stability criteria.
         isl_inx = np.argmax(island_lengths)
         island  = islands[isl_inx]
         sInx    = island[0]
@@ -233,6 +246,10 @@ def run_edge_detect(
         fitWin_0    = edge_1.index[sInx]
         fitWin_1    = edge_1.index[eInx]
         
+        # We know that the edges are very likely to have problems,
+        # even if they meet the stability criteria. So, we require
+        # the fit boundaries to be at minimum 30 minutes after after
+        # and before the start and end times.
         margin = datetime.timedelta(minutes=30)
         if fitWin_0 < (win_0 + margin):
             fitWin_0 = win_0 + margin
@@ -240,25 +257,16 @@ def run_edge_detect(
         if fitWin_1 > (win_1 - margin):
             fitWin_1 = win_1 - margin
 
+        # Select the data and times to be used for curve fitting.
         fitWinLim   = (fitWin_0, fitWin_1)
-
-#        fitWin_0    = date + datetime.timedelta(hours=15)
-#        fitWin_1    = date + datetime.timedelta(hours=22,minutes=30)
-#        fitWinLim   = (fitWin_0, fitWin_1)
-
         tf          = np.logical_and(sg_edge.index >= fitWin_0, sg_edge.index < fitWin_1)
         fit_times   = sg_edge.index[tf].copy()
         tt_sec      = tt_sec[tf]
         data        = data[tf]
 
-        def my_sin(tt_sec,T_hr,amplitude_km,phase_hr,offset_km,slope_kmph):
-            phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
-            freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-            result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
-            return result
-
         # now do the fit
         try:
+#        if True:
             guess = {}
             guess['T_hr']           = 3.
             guess['amplitude_km']   = np.ptp(data)/2.
@@ -266,7 +274,7 @@ def run_edge_detect(
             guess['offset_km']      = np.mean(data)
             guess['slope_kmph']     = 0.
 
-            sinFit,pcov,infodict,mesg,ier = curve_fit(my_sin, tt_sec, data, p0=list(guess.values()),full_output=True)
+            sinFit,pcov,infodict,mesg,ier = curve_fit(sinusoid, tt_sec, data, p0=list(guess.values()),full_output=True)
 
             p0_sin_fit = {}
             p0_sin_fit['T_hr']           = sinFit[0]
@@ -275,18 +283,9 @@ def run_edge_detect(
             p0_sin_fit['offset_km']      = sinFit[3]
             p0_sin_fit['slope_kmph']     = sinFit[4]
 
-            # recreate the fitted curve using the optimized parameters
-            sin_fit = my_sin(tt_sec, **p0_sin_fit)
-            sin_fit = pd.Series(sin_fit,index=fit_times)
-
-            # Calculate r2
-            ss_res      = np.sum( (data - sin_fit)**2)
-            ss_tot      = np.sum( (data - np.mean(data))**2 )
-            r_sqrd      = 1 - (ss_res / ss_tot)
-            p0_sin_fit['r2']    = r_sqrd
-
-            # Calculate Polynomial Fit
+            # Curve Fit 2nd Deg Polynomial #########  
             coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(tt_sec, data, 2, full = True)
+            ss_res_poly_fit = ss_res[0]
             poly_fit = poly.polyval(tt_sec, coefs)
             poly_fit = pd.Series(poly_fit,index=fit_times)
 
@@ -294,8 +293,19 @@ def run_edge_detect(
             for cinx, coef in enumerate(coefs):
                 p0_poly_fit[f'c_{cinx}'] = coef
 
-            r_sqrd      = 1 - (ss_res / ss_tot)
-            p0_poly_fit['r2']    = r_sqrd[0]
+            ss_tot_poly_fit      = np.sum( (data - np.mean(data))**2 )
+            r_sqrd_poly_fit      = 1 - (ss_res_poly_fit / ss_tot_poly_fit)
+            p0_poly_fit['r2']    = r_sqrd_poly_fit
+
+            # Curve Fit Sinusoid ################### 
+            sin_fit = sinusoid(tt_sec, **p0_sin_fit)
+            sin_fit = pd.Series(sin_fit,index=fit_times)
+
+            # Calculate r2 for Sinusoid Fit
+            ss_res_sin_fit              = np.sum( (data - sin_fit)**2)
+            ss_tot_sin_fit              = np.sum( (data - np.mean(data))**2 )
+            r_sqrd_sin_fit              = 1 - (ss_res_sin_fit / ss_tot_sin_fit)
+            p0_sin_fit['r2']            = r_sqrd_sin_fit
 
         except:
             sin_fit     = pd.Series(np.zeros(len(fit_times))*np.nan,index=fit_times)
