@@ -22,23 +22,13 @@ from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
 
-# Load in Mary Lou West's Manual LSTID Analysis
-import lstid_ham
-lstid_mlw   = lstid_ham.LSTID_HAM()
-df_mlw      = lstid_mlw.df.copy()
-df_mlw      = df_mlw.set_index('date')
-old_keys    = list(df_mlw.keys())
-new_keys    = {x:'MLW_'+x for x in old_keys}
-df_mlw      = df_mlw.rename(columns=new_keys)
-
-
-plt.rcParams['font.size']           = 18
-plt.rcParams['font.weight']         = 'bold'
-plt.rcParams['axes.titleweight']    = 'bold'
-plt.rcParams['axes.labelweight']    = 'bold'
-plt.rcParams['axes.xmargin']        = 0
-#plt.rcParams['axes.grid']           = True
-#plt.rcParams['grid.linestyle']      = ':'
+def mpl_style():
+    plt.rcParams['font.size']           = 18
+    plt.rcParams['font.weight']         = 'bold'
+    plt.rcParams['axes.titleweight']    = 'bold'
+    plt.rcParams['axes.labelweight']    = 'bold'
+    plt.rcParams['axes.xmargin']        = 0
+mpl_style()
 
 parent_dir     = 'data_files'
 data_out_path  = 'processed_data/full_data.joblib'
@@ -529,7 +519,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     plt.close()
     return
 
-def plot_season_analysis(all_results,output_dir='output'):
+def plot_season_analysis(all_results,output_dir='output',compare_ds = 'MLW'):
     """
     Plot the LSTID analysis for the entire season.
     """
@@ -586,22 +576,34 @@ def plot_season_analysis(all_results,output_dir='output'):
     gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
     fig     = plt.figure(figsize=figsize)
 
-    # Combine FFT and MLW analysis dataframes.
-    dfc = pd.concat([df,df_mlw],axis=1)
+    if compare_ds == 'MLW':
+        # Load in Mary Lou West's Manual LSTID Analysis
+        import lstid_ham
+        mpl_style()
 
-    # Eliminate MLW_range_range = 0.
-    tf = dfc['MLW_range_range'] <= 0
-    dfc.loc[tf,'MLW_range_range']   = np.nan
+        lstid_mlw   = lstid_ham.LSTID_HAM()
+        df_mlw      = lstid_mlw.df.copy()
+        df_mlw      = df_mlw.set_index('date')
+        old_keys    = list(df_mlw.keys())
+        new_keys    = {x:'MLW_'+x for x in old_keys}
+        df_mlw      = df_mlw.rename(columns=new_keys)
 
-    # Eliminate MLW_tid_hours = 0.
-    tf = dfc['MLW_tid_hours'] <= 0
-    dfc.loc[tf,'MLW_tid_hours']   = np.nan
+        # Combine FFT and MLW analysis dataframes.
+        dfc = pd.concat([df,df_mlw],axis=1)
 
-    # Compare parameters - List of (df, lstid_mlw) keys to compare.
-    cmps = []
-    cmps.append( ('T_hr',           'MLW_period_hr') )
-    cmps.append( ('amplitude_km',  'MLW_range_range') )
-    cmps.append( ('amplitude_km',  'MLW_tid_hours') )
+        # Eliminate MLW_range_range = 0.
+        tf = dfc['MLW_range_range'] <= 0
+        dfc.loc[tf,'MLW_range_range']   = np.nan
+
+        # Eliminate MLW_tid_hours = 0.
+        tf = dfc['MLW_tid_hours'] <= 0
+        dfc.loc[tf,'MLW_tid_hours']   = np.nan
+
+        # Compare parameters - List of (df, lstid_mlw) keys to compare.
+        cmps = []
+        cmps.append( ('T_hr',          'MLW_period_hr') )
+        cmps.append( ('amplitude_km',  'MLW_range_range') )
+        cmps.append( ('amplitude_km',  'MLW_tid_hours') )
 
     for pinx,(key_0,key_1) in enumerate(cmps):
         rinx    = pinx
@@ -617,7 +619,7 @@ def plot_season_analysis(all_results,output_dir='output'):
         ax0.set_xlim(sDate,eDate)
 
         ax0r    = ax0.twinx()
-        hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label='MLW',alpha=0.5)
+        hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label=compare_ds,alpha=0.5)
         hndls.append(hndl)
         ax0r.set_ylabel(key_1)
         ax0r.legend(handles=hndls,loc='lower right')
