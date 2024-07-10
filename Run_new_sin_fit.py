@@ -551,7 +551,13 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
         df_lst.append(tmp)
         df_inx.append(date)
 
-    df = pd.DataFrame(df_lst,index=df_inx)
+    df          = pd.DataFrame(df_lst,index=df_inx)
+    # Force amplitudes to be positive.
+    df.loc[:,'amplitude_km']    = np.abs(df['amplitude_km'])
+
+    csv_fname   = '{!s}-{!s}_sinFit.csv'.format(sDate_str,eDate_str)
+    csv_fpath   = os.path.join(output_dir,csv_fname)
+    df.to_csv(csv_fpath)
     
     # Eliminate waves with period > 5 hr.
     tf = df['T_hr'] > 5
@@ -562,9 +568,6 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     tf = df['amplitude_km'] < 15
     df.loc[tf,'T_hr']           = np.nan
     df.loc[tf,'amplitude_km']   = np.nan
-
-    # Force amplitudes to be positive.
-    df.loc[:,'amplitude_km']    = np.abs(df['amplitude_km'])
 
     # Plotting #############################
     nCols   = 3
