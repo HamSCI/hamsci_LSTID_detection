@@ -70,6 +70,24 @@ def adjust_axes(ax_0,ax_1):
     ax_0_pos[2] = ax_1_pos[2]
     ax_0.set_position(ax_0_pos)
 
+def islandinfo(y, trigger_val, stopind_inclusive=True):
+    """
+    From https://stackoverflow.com/questions/50151417/numpy-find-indices-of-groups-with-same-value
+    """
+    # Setup "sentients" on either sides to make sure we have setup
+    # "ramps" to catch the start and stop for the edge islands
+    # (left-most and right-most islands) respectively
+    y_ext = np.r_[False,y==trigger_val, False]
+
+    # Get indices of shifts, which represent the start and stop indices
+    idx = np.flatnonzero(y_ext[:-1] != y_ext[1:])
+
+    # Lengths of islands if needed
+    lens = idx[1::2] - idx[:-1:2]
+
+    # Using a stepsize of 2 would get us start and stop indices for each island
+    return list(zip(idx[:-1:2], idx[1::2]-int(stopind_inclusive))), lens
+
 def run_edge_detect(
     date,
     x_trim=.08333,
@@ -196,25 +214,42 @@ def run_edge_detect(
 
         # Window Limits for FFT analysis.
         roll_win    = 15
-        xx_n = edge_0.rolling(roll_win).std()
-        xx_d = edge_0.rolling(roll_win).mean()
+        xx_n = edge_1.rolling(roll_win).std()
+        xx_d = edge_1.rolling(roll_win).mean()
         stability   = xx_n/xx_d
 
-        fitWin_0    = date + datetime.timedelta(hours=15)
-        fitWin_1    = date + datetime.timedelta(hours=22,minutes=30)
+        stab_thresh = 0.05
+        tf  = stability < stab_thresh
+
+        # Find ''islands' that meet the stability criteria
+        islands, island_lengths  = islandinfo(tf,1)
+
+        # Get the largest island.
+        isl_inx = np.argmax(island_lengths)
+        island  = islands[isl_inx]
+        sInx    = island[0]
+        eInx    = island[1]
+
+        fitWin_0    = edge_1.index[sInx]
+        fitWin_1    = edge_1.index[eInx]
+        
+        margin = datetime.timedelta(minutes=30)
+        if fitWin_0 < (win_0 + margin):
+            fitWin_0 = win_0 + margin
+
+        if fitWin_1 > (win_1 - margin):
+            fitWin_1 = win_1 - margin
+
         fitWinLim   = (fitWin_0, fitWin_1)
+
+#        fitWin_0    = date + datetime.timedelta(hours=15)
+#        fitWin_1    = date + datetime.timedelta(hours=22,minutes=30)
+#        fitWinLim   = (fitWin_0, fitWin_1)
 
         tf          = np.logical_and(sg_edge.index >= fitWin_0, sg_edge.index < fitWin_1)
         fit_times   = sg_edge.index[tf].copy()
         tt_sec      = tt_sec[tf]
         data        = data[tf]
-
-        guess = {}
-        guess['T_hr']           = 3.
-        guess['amplitude_km']   = np.ptp(data)/2.
-        guess['phase_hr']       = 0.
-        guess['offset_km']      = np.mean(data)
-        guess['slope_kmph']     = 0.
 
         def my_sin(tt_sec,T_hr,amplitude_km,phase_hr,offset_km,slope_kmph):
             phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
@@ -223,18 +258,51 @@ def run_edge_detect(
             return result
 
         # now do the fit
-        sinFit = curve_fit(my_sin, tt_sec, data, p0=list(guess.values()))
+        try:
+            guess = {}
+            guess['T_hr']           = 3.
+            guess['amplitude_km']   = np.ptp(data)/2.
+            guess['phase_hr']       = 0.
+            guess['offset_km']      = np.mean(data)
+            guess['slope_kmph']     = 0.
 
-        p0 = {}
-        p0['T_hr']           = sinFit[0][0]
-        p0['amplitude_km']   = sinFit[0][1]
-        p0['phase_hr']       = sinFit[0][2]
-        p0['offset_km']      = sinFit[0][3]
-        p0['slope_kmph']     = sinFit[0][4]
-        
-        # recreate the fitted curve using the optimized parameters
-        sin_fit = my_sin(tt_sec, **p0)
-        sin_fit = pd.Series(sin_fit,index=fit_times)
+            sinFit,pcov,infodict,mesg,ier = curve_fit(my_sin, tt_sec, data, p0=list(guess.values()),full_output=True)
+
+            p0_sin_fit = {}
+            p0_sin_fit['T_hr']           = sinFit[0]
+            p0_sin_fit['amplitude_km']   = sinFit[1]
+            p0_sin_fit['phase_hr']       = sinFit[2]
+            p0_sin_fit['offset_km']      = sinFit[3]
+            p0_sin_fit['slope_kmph']     = sinFit[4]
+
+            # recreate the fitted curve using the optimized parameters
+            sin_fit = my_sin(tt_sec, **p0_sin_fit)
+            sin_fit = pd.Series(sin_fit,index=fit_times)
+
+            # Calculate r2
+            ss_res      = np.sum( (data - sin_fit)**2)
+            ss_tot      = np.sum( (data - np.mean(data))**2 )
+            r_sqrd      = 1 - (ss_res / ss_tot)
+            p0_sin_fit['r2']    = r_sqrd
+
+            # Calculate Polynomial Fit
+            coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(tt_sec, data, 2, full = True)
+            poly_fit = poly.polyval(tt_sec, coefs)
+            poly_fit = pd.Series(poly_fit,index=fit_times)
+
+            p0_poly_fit = {}
+            for cinx, coef in enumerate(coefs):
+                p0_poly_fit[f'c_{cinx}'] = coef
+
+            r_sqrd      = 1 - (ss_res / ss_tot)
+            p0_poly_fit['r2']    = r_sqrd[0]
+
+        except:
+            sin_fit     = pd.Series(np.zeros(len(fit_times))*np.nan,index=fit_times)
+            p0_sin_fit  = {}
+
+            poly_fit    = pd.Series(np.zeros(len(fit_times))*np.nan,index=fit_times)
+            p0_poly_fit = {}
 
         # Package SpotArray into XArray
         daDct               = {}
@@ -252,7 +320,9 @@ def run_edge_detect(
         result['001_windowLimits']  = edge_1
         result['003_sgEdge']        = sg_edge
         result['sin_fit']           = sin_fit
-        result['p0']                = p0
+        result['p0_sin_fit']        = p0_sin_fit
+        result['poly_fit']          = poly_fit
+        result['p0_poly_fit']       = p0_poly_fit
         result['stability']         = stability
         result['metaData']  = meta  = {}
 
@@ -301,6 +371,9 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     edge_1      = result_dct.get('001_windowLimits')
     sg_edge     = result_dct.get('003_sgEdge')
     sin_fit     = result_dct.get('sin_fit')
+    poly_fit    = result_dct.get('poly_fit')
+    p0_sin_fit  = result_dct.get('p0_sin_fit')
+    p0_poly_fit = result_dct.get('p0_poly_fit')
     stability   = result_dct.get('stability')
 
     ranges_km   = arr.coords['ranges_km']
@@ -308,7 +381,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
     nCols   = 1
-    nRows   = 1
+    nRows   = 2
 
     axInx   = 0
     figsize = (18,nRows*7)
@@ -327,7 +400,12 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
 
     ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
     sgf_line    = ax.plot(sg_edge.index,sg_edge,lw=2,label='SG Filtered Edge')
-    ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='white',lw=3,ls='--')
+
+    if p0_sin_fit != {}:
+        if p0_sin_fit['r2'] >= p0_poly_fit['r2']:
+            ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='white',lw=3,ls='--')
+        else:
+            ax.plot(poly_fit.index,poly_fit,label='Poly Fit',color='white',lw=3,ls='--')
 
     ax2 = ax.twinx()
     ax2.plot(stability.index,stability,lw=2,color='0.5')
@@ -337,24 +415,25 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
         ax.axvline(wl,color='0.8',ls='--',lw=2)
 
     for wl in fitWinLim:
-        ax.axvline(wl,color='0.8',ls='--',lw=2)
+        ax.axvline(wl,color='lime',ls='--',lw=2)
 
     ax.legend(loc='lower right',fontsize='x-small',ncols=4)
     fmt_xaxis(ax,xlim)
 
     ax.set_ylabel('Range [km]')
-    ax.set_ylim(250,2750)
+#    ax.set_ylim(250,2750)
+    ax.set_ylim(1000,2000)
 
-#    # Print TID Info
-#    axInx   = axInx + 1
-#    ax      = fig.add_subplot(nRows,nCols,axInx)
-#    ax.grid(False)
-#    for xtl in ax.get_xticklabels():
-#        xtl.set_visible(False)
-#    for ytl in ax.get_yticklabels():
-#        ytl.set_visible(False)
-#    axs.append(ax)
-#
+    # Print TID Info
+    axInx   = axInx + 1
+    ax      = fig.add_subplot(nRows,nCols,axInx)
+    ax.grid(False)
+    for xtl in ax.get_xticklabels():
+        xtl.set_visible(False)
+    for ytl in ax.get_yticklabels():
+        ytl.set_visible(False)
+    axs.append(ax)
+
 #    if date in df_mlw.index:
 #        mlw = df_mlw.loc[date,:]
 #    else:
@@ -382,9 +461,26 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
 #    txt.append('Range_Range:   {:5.1f}'.format(mlw.get('MLW_range_range',np.nan)))
 #    txt.append('MLW TID Hours: {:5.1f}'.format(mlw.get('MLW_tid_hours',np.nan)))
 #    txt.append('MLW Comment:   {!s}'.format(mlw.get('MLW_comment')))
-#
-#    fontdict = {'weight':'normal','family':'monospace'}
-#    ax.text(0.05,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
+    
+    txt = []
+    txt.append('Sine Fit Parameters')
+    for key, val in p0_sin_fit.items():
+        if key == 'r2':
+            txt.append('{!s}: {:0.2f}'.format(key,val))
+        else:
+            txt.append('{!s}: {:0.1f}'.format(key,val))
+
+    fontdict = {'weight':'normal','family':'monospace'}
+    ax.text(0.05,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
+
+    txt = []
+    txt.append('Polynomial Fit Parameters')
+    for key, val in p0_poly_fit.items():
+        if key == 'r2':
+            txt.append('{!s}: {:0.2f}'.format(key,val))
+        else:
+            txt.append('{!s}: {:0.1f}'.format(key,val))
+    ax.text(0.5,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
 
     fig.tight_layout()
 
@@ -519,11 +615,11 @@ if __name__ == '__main__':
     cache_dir   = 'cache'
     clear_cache = True
 
-#    sDate   = datetime.datetime(2018,11,1)
-#    eDate   = datetime.datetime(2019,4,30)
+    sDate   = datetime.datetime(2018,11,1)
+    eDate   = datetime.datetime(2019,4,30)
 
-    sDate   = datetime.datetime(2018,11,9)
-    eDate   = datetime.datetime(2018,11,9)
+#    sDate   = datetime.datetime(2018,11,9)
+#    eDate   = datetime.datetime(2018,11,9)
 
 #    sDate   = datetime.datetime(2018,11,5)
 #    eDate   = datetime.datetime(2018,11,5)
