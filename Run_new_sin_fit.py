@@ -94,7 +94,7 @@ def sinusoid(tt_sec,T_hr,amplitude_km,phase_hr,offset_km,slope_kmph):
     """
     phase_rad       = (2.*np.pi) * (phase_hr / T_hr) 
     freq            = 1./(datetime.timedelta(hours=T_hr).total_seconds())
-    result          = amplitude_km * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
+    result          = np.abs(amplitude_km) * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
     return result
 
 def run_edge_detect(
@@ -208,9 +208,9 @@ def run_edge_detect(
         
         sg_edge     = edge_1.copy()
         
-        sg_win      = datetime.timedelta(hours=4)
-        sg_win_N    = int(sg_win.total_seconds()/Ts.total_seconds())
-        sg_edge[:]  = signal.savgol_filter(edge_1,sg_win_N,4)
+#        sg_win      = datetime.timedelta(hours=4)
+#        sg_win_N    = int(sg_win.total_seconds()/Ts.total_seconds())
+#        sg_edge[:]  = signal.savgol_filter(edge_1,sg_win_N,4)
 
         tf = np.logical_and(sg_edge.index >= winlim[0], sg_edge.index < winlim[1])
 #        sg_edge[tf]  = sg_edge[tf]*np.hanning(np.sum(tf))
@@ -266,23 +266,6 @@ def run_edge_detect(
 
         # now do the fit
         try:
-#        if True:
-            guess = {}
-            guess['T_hr']           = 3.
-            guess['amplitude_km']   = np.ptp(data)/2.
-            guess['phase_hr']       = 0.
-            guess['offset_km']      = np.mean(data)
-            guess['slope_kmph']     = 0.
-
-            sinFit,pcov,infodict,mesg,ier = curve_fit(sinusoid, tt_sec, data, p0=list(guess.values()),full_output=True)
-
-            p0_sin_fit = {}
-            p0_sin_fit['T_hr']           = sinFit[0]
-            p0_sin_fit['amplitude_km']   = sinFit[1]
-            p0_sin_fit['phase_hr']       = sinFit[2]
-            p0_sin_fit['offset_km']      = sinFit[3]
-            p0_sin_fit['slope_kmph']     = sinFit[4]
-
             # Curve Fit 2nd Deg Polynomial #########  
             coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(tt_sec, data, 2, full = True)
             ss_res_poly_fit = ss_res[0]
@@ -297,13 +280,32 @@ def run_edge_detect(
             r_sqrd_poly_fit      = 1 - (ss_res_poly_fit / ss_tot_poly_fit)
             p0_poly_fit['r2']    = r_sqrd_poly_fit
 
+            # Detrend Data Using 2nd Degree Polynomial
+            data_detrend         = data - poly_fit
+
             # Curve Fit Sinusoid ################### 
+            guess = {}
+            guess['T_hr']           = 3.
+            guess['amplitude_km']   = np.ptp(data_detrend)/2.
+            guess['phase_hr']       = 0.
+            guess['offset_km']      = np.mean(data_detrend)
+            guess['slope_kmph']     = 0.
+
+            sinFit,pcov,infodict,mesg,ier = curve_fit(sinusoid, tt_sec, data_detrend, p0=list(guess.values()),full_output=True)
+
+            p0_sin_fit = {}
+            p0_sin_fit['T_hr']           = sinFit[0]
+            p0_sin_fit['amplitude_km']   = sinFit[1]
+            p0_sin_fit['phase_hr']       = sinFit[2]
+            p0_sin_fit['offset_km']      = sinFit[3]
+            p0_sin_fit['slope_kmph']     = sinFit[4]
+
             sin_fit = sinusoid(tt_sec, **p0_sin_fit)
             sin_fit = pd.Series(sin_fit,index=fit_times)
 
             # Calculate r2 for Sinusoid Fit
-            ss_res_sin_fit              = np.sum( (data - sin_fit)**2)
-            ss_tot_sin_fit              = np.sum( (data - np.mean(data))**2 )
+            ss_res_sin_fit              = np.sum( (data_detrend - sin_fit)**2)
+            ss_tot_sin_fit              = np.sum( (data_detrend - np.mean(data_detrend))**2 )
             r_sqrd_sin_fit              = 1 - (ss_res_sin_fit / ss_tot_sin_fit)
             p0_sin_fit['r2']            = r_sqrd_sin_fit
 
@@ -311,8 +313,10 @@ def run_edge_detect(
             sin_fit     = pd.Series(np.zeros(len(fit_times))*np.nan,index=fit_times)
             p0_sin_fit  = {}
 
-            poly_fit    = pd.Series(np.zeros(len(fit_times))*np.nan,index=fit_times)
+            poly_fit    = sin_fit.copy()
             p0_poly_fit = {}
+
+            data_detrend = sin_fit.copy()
 
         # Package SpotArray into XArray
         daDct               = {}
@@ -334,6 +338,7 @@ def run_edge_detect(
         result['poly_fit']          = poly_fit
         result['p0_poly_fit']       = p0_poly_fit
         result['stability']         = stability
+        result['data_detrend']      = data_detrend
         result['metaData']  = meta  = {}
 
         meta['date']        = date
@@ -375,23 +380,24 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     winlim      = md.get('winlim')
     fitWinLim   = md.get('fitWinLim')
 
-    arr         = result_dct.get('spotArr')
-    med_lines   = result_dct.get('med_lines')
-    edge_0      = result_dct.get('000_detectedEdge')
-    edge_1      = result_dct.get('001_windowLimits')
-    sg_edge     = result_dct.get('003_sgEdge')
-    sin_fit     = result_dct.get('sin_fit')
-    poly_fit    = result_dct.get('poly_fit')
-    p0_sin_fit  = result_dct.get('p0_sin_fit')
-    p0_poly_fit = result_dct.get('p0_poly_fit')
-    stability   = result_dct.get('stability')
+    arr             = result_dct.get('spotArr')
+    med_lines       = result_dct.get('med_lines')
+    edge_0          = result_dct.get('000_detectedEdge')
+    edge_1          = result_dct.get('001_windowLimits')
+    sg_edge         = result_dct.get('003_sgEdge')
+    sin_fit         = result_dct.get('sin_fit')
+    poly_fit        = result_dct.get('poly_fit')
+    p0_sin_fit      = result_dct.get('p0_sin_fit')
+    p0_poly_fit     = result_dct.get('p0_poly_fit')
+    stability       = result_dct.get('stability')
+    data_detrend    = result_dct.get('data_detrend')
 
     ranges_km   = arr.coords['ranges_km']
     arr_times   = [pd.Timestamp(x) for x in arr.coords['datetimes'].values]
     Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
     nCols   = 1
-    nRows   = 2
+    nRows   = 3
 
     axInx   = 0
     figsize = (18,nRows*7)
@@ -409,13 +415,9 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     plt.colorbar(mpbl,aspect=10,pad=cb_pad)
 
     ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
-    sgf_line    = ax.plot(sg_edge.index,sg_edge,lw=2,label='SG Filtered Edge')
 
     if p0_sin_fit != {}:
-        if p0_sin_fit['r2'] >= p0_poly_fit['r2']:
-            ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='white',lw=3,ls='--')
-        else:
-            ax.plot(poly_fit.index,poly_fit,label='Poly Fit',color='white',lw=3,ls='--')
+        ax.plot(sin_fit.index,sin_fit+poly_fit,label='Sin Fit',color='white',lw=3,ls='--')
 
     ax2 = ax.twinx()
     ax2.plot(stability.index,stability,lw=2,color='0.5')
@@ -433,6 +435,22 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     ax.set_ylabel('Range [km]')
 #    ax.set_ylim(250,2750)
     ax.set_ylim(1000,2000)
+
+    # Plot Detrended and fit data. #########
+    axInx   = axInx + 1
+    ax      = fig.add_subplot(nRows,nCols,axInx)
+    axs.append(ax)
+
+    ax.plot(data_detrend.index,data_detrend,label='Detrended Edge')
+    ax.plot(sin_fit.index,sin_fit,label='Sin Fit',color='red',lw=3,ls='--')
+
+    for wl in fitWinLim:
+        ax.axvline(wl,color='lime',ls='--',lw=2)
+    
+
+    ax.set_ylabel('Range [km]')
+    fmt_xaxis(ax,xlim)
+    ax.legend(loc='lower right',fontsize='x-small',ncols=4)
 
     # Print TID Info
     axInx   = axInx + 1
@@ -471,21 +489,22 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
 #    txt.append('Range_Range:   {:5.1f}'.format(mlw.get('MLW_range_range',np.nan)))
 #    txt.append('MLW TID Hours: {:5.1f}'.format(mlw.get('MLW_tid_hours',np.nan)))
 #    txt.append('MLW Comment:   {!s}'.format(mlw.get('MLW_comment')))
+
+    fontdict = {'weight':'normal','family':'monospace'}
     
     txt = []
-    txt.append('Sine Fit Parameters')
-    for key, val in p0_sin_fit.items():
+    txt.append('2nd Deg Poly Fit Parameters')
+    txt.append('(Used for Detrending)')
+    for key, val in p0_poly_fit.items():
         if key == 'r2':
             txt.append('{!s}: {:0.2f}'.format(key,val))
         else:
             txt.append('{!s}: {:0.1f}'.format(key,val))
-
-    fontdict = {'weight':'normal','family':'monospace'}
     ax.text(0.05,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
 
     txt = []
-    txt.append('Polynomial Fit Parameters')
-    for key, val in p0_poly_fit.items():
+    txt.append('Sinusoid Fit Parameters')
+    for key, val in p0_sin_fit.items():
         if key == 'r2':
             txt.append('{!s}: {:0.2f}'.format(key,val))
         else:
