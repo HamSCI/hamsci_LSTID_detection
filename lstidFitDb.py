@@ -3,6 +3,7 @@ import os
 import sqlite3
 import datetime
 import numpy as np
+import pandas as pd
 
 class LSTIDFitDb(object):
     def __init__(self,db_fname='lstidSinFit.sql',deleteDb=False,table='lstidSinFit'):
@@ -100,6 +101,28 @@ class LSTIDFitDb(object):
         conn.close()
 
         return (p0, True) # (params, in_DB)
+    def get_data_frame(self, sDate = datetime.datetime(2018,11,1), 
+                             eDate = datetime.datetime(2019,4,30), 
+                             T_hr_max = 5):
+        dates = [sDate]
+        while dates[-1] < eDate:
+            dates.append(dates[-1]+datetime.timedelta(days=1))
+
+        lst = []
+        inx = []
+        for date in dates:
+            p0, in_DB = self.get_fit(date)
+            if in_DB:
+                lst.append(p0)
+                inx.append(date)
+
+        df = pd.DataFrame(lst,index=inx)
+        df['dur_hr'] = (df['eTime'] - df['sTime']).apply(lambda x: x.total_seconds()/3600.)
+
+        # LSTIDs Only
+        tf = df['T_hr'] <= T_hr_max 
+        df = df[tf].copy()
+        return df
 
 if __name__ == '__main__':
     ldb = LSTIDFitDb(deleteDb=False)

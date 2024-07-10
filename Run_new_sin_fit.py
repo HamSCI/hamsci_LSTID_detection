@@ -519,7 +519,7 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     plt.close()
     return
 
-def plot_season_analysis(all_results,output_dir='output',compare_ds = 'MLW'):
+def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     """
     Plot the LSTID analysis for the entire season.
     """
@@ -529,7 +529,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'MLW'):
 
     sDate_str   = sDate.strftime('%Y%m%d')
     eDate_str   = sDate.strftime('%Y%m%d')
-    png_fname   = '{!s}-{!s}_seasonAnalysis.png'.format(sDate_str,eDate_str)
+    png_fname   = '{!s}-{!s}_{!s}_seasonAnalysis.png'.format(sDate_str,eDate_str,compare_ds)
     png_fpath   = os.path.join(output_dir,png_fname)
 
     # Create parameter dataframe.
@@ -604,13 +604,33 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'MLW'):
         cmps.append( ('T_hr',          'MLW_period_hr') )
         cmps.append( ('amplitude_km',  'MLW_range_range') )
         cmps.append( ('amplitude_km',  'MLW_tid_hours') )
+    elif compare_ds == 'NAF':
+        import lstidFitDb
+        ldb     = lstidFitDb.LSTIDFitDb()
+        df_naf  = ldb.get_data_frame()
+
+        old_keys    = list(df_naf.keys())
+        new_keys    = {x:'NAF_'+x for x in old_keys}
+        df_naf      = df_naf.rename(columns=new_keys)
+
+        # Combine FFT and MLW analysis dataframes.
+        dfc = pd.concat([df,df_naf],axis=1)
+
+        # Compare parameters - List of (df, lstid_mlw) keys to compare.
+        cmps = []
+        cmps.append( ('T_hr',          'NAF_T_hr') )
+        cmps.append( ('amplitude_km',  'NAF_amplitude_km') )
+        cmps.append( ('amplitude_km',  'NAF_dur_hr') )
 
     for pinx,(key_0,key_1) in enumerate(cmps):
         rinx    = pinx
         ax0     = fig.add_subplot(gs[rinx,:2])
 
+        df_hist = dfc[[key_0,key_1]]
         p0  = dfc[key_0]
         p1  = dfc[key_1]
+        tf  = np.logical_and(np.isfinite(p0.values.astype(float)),np.isfinite(p1.values.astype(float)))
+        pct_overlap = 100 * (np.count_nonzero(tf) / len(dfc))
 
         hndls   = []
         hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='Sine Fit',alpha=0.5)
@@ -648,6 +668,11 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'MLW'):
         ax1.set_ylabel(key_1)
 
     fig.tight_layout()
+
+    txt = []
+    txt.append('LSTID Automatic Sinusoid Fit Compared with {!s} Manual Fit'.format(compare_ds))
+    txt.append('{:0.0f}% Overlap'.format(pct_overlap))
+    fig.text(0.5,1.0,'\n'.join(txt),ha='center',fontdict={'weight':'bold','size':'x-large'})
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
@@ -727,6 +752,7 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
-    plot_season_analysis(all_results,output_dir=output_dir)
+    for compare_ds in ['MLW','NAF']:
+        plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
 
 import ipdb; ipdb.set_trace()
