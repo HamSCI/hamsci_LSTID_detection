@@ -544,9 +544,8 @@ def plot_season_analysis(all_results,output_dir='output'):
 
     # Create parameter dataframe.
     params = []
-    params.append('004_filtered_Tmax_hr')
-    params.append('004_filtered_PSDdBmax')
-    params.append('004_filtered_intSpect')
+    params.append('T_hr')
+    params.append('amplitude_km')
 
     df_lst = []
     df_inx = []
@@ -554,17 +553,32 @@ def plot_season_analysis(all_results,output_dir='output'):
         if results is None:
             continue
 
+        p0_sin_fit = results.get('p0_sin_fit')
         tmp = {}
         for param in params:
-            tmp[param] = results[param]
+            tmp[param] = p0_sin_fit.get(param,np.nan)
 
         df_lst.append(tmp)
         df_inx.append(date)
 
     df = pd.DataFrame(df_lst,index=df_inx)
+    
+    # Eliminate waves with period > 5 hr.
+    tf = df['T_hr'] > 5
+    df.loc[tf,'T_hr']           = np.nan
+    df.loc[tf,'amplitude_km']   = np.nan
+
+    # Eliminate waves with amplitudes < 15 km.
+    tf = df['amplitude_km'] < 15
+    df.loc[tf,'T_hr']           = np.nan
+    df.loc[tf,'amplitude_km']   = np.nan
+
+    # Force amplitudes to be positive.
+    df.loc[:,'amplitude_km']    = np.abs(df['amplitude_km'])
+
     # Plotting #############################
     nCols   = 3
-    nRows   = 4
+    nRows   = 3
 
     axInx   = 0
     figsize = (25,nRows*5)
@@ -572,63 +586,62 @@ def plot_season_analysis(all_results,output_dir='output'):
     gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
     fig     = plt.figure(figsize=figsize)
 
-    ax  = fig.add_subplot(gs[0,:2])
-
-    ckey = '004_filtered_intSpect'
-
-    cmap = mpl.cm.cool
-    vmin = df['004_filtered_intSpect'].min() 
-    vmax = df['004_filtered_intSpect'].max() 
-    norm = mpl.colors.Normalize(vmin=vmin,vmax=vmax)
-    pos = list(ax.get_position().bounds)
-    pos[0] = 0.675
-    pos[1] = pos[1] + pos[3]/2.
-    pos[2] = 0.025
-#    rect : tuple (left, bottom, width, height)
-    cax = fig.add_axes(pos)
-    cbl  = mpl.colorbar.ColorbarBase(cax,cmap=cmap,norm=norm)
-    cbl.set_label(ckey)
-    for date,results in all_results.items():
-        if results is None:
-            continue
-        psd = results.get('004_filtered_psd')
-        color   = cmap(norm(results[ckey]))
-        ax.plot(psd.index,psd,color=color)
-    fmt_fxaxis(ax) 
-
     # Combine FFT and MLW analysis dataframes.
     dfc = pd.concat([df,df_mlw],axis=1)
 
+    # Eliminate MLW_range_range = 0.
+    tf = dfc['MLW_range_range'] <= 0
+    dfc.loc[tf,'MLW_range_range']   = np.nan
+
+    # Eliminate MLW_tid_hours = 0.
+    tf = dfc['MLW_tid_hours'] <= 0
+    dfc.loc[tf,'MLW_tid_hours']   = np.nan
+
     # Compare parameters - List of (df, lstid_mlw) keys to compare.
     cmps = []
-    cmps.append( ('004_filtered_Tmax_hr',   'MLW_period_hr') )
-    cmps.append( ('004_filtered_PSDdBmax',  'MLW_tid_hours') )
-    cmps.append( ('004_filtered_intSpect',  'MLW_tid_hours') )
+    cmps.append( ('T_hr',           'MLW_period_hr') )
+    cmps.append( ('amplitude_km',  'MLW_range_range') )
+    cmps.append( ('amplitude_km',  'MLW_tid_hours') )
 
     for pinx,(key_0,key_1) in enumerate(cmps):
-        rinx    = pinx + 1
+        rinx    = pinx
         ax0     = fig.add_subplot(gs[rinx,:2])
 
         p0  = dfc[key_0]
         p1  = dfc[key_1]
 
-#        ax0.plot(p0.index,p0,marker='.')
         hndls   = []
-        hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='FFT')
+        hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='Sine Fit',alpha=0.5)
         hndls.append(hndl)
         ax0.set_ylabel(key_0)
         ax0.set_xlim(sDate,eDate)
 
         ax0r    = ax0.twinx()
-#        ax0r.plot(p1.index,p1,marker='.')
         hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label='MLW',alpha=0.5)
         hndls.append(hndl)
         ax0r.set_ylabel(key_1)
-
         ax0r.legend(handles=hndls,loc='lower right')
 
-        ax1   = fig.add_subplot(gs[rinx,2])
-        ax1.scatter(p0,p1)
+        scat_data   = dfc[[key_0,key_1]].dropna().sort_values(key_0)
+        p00         = scat_data[key_0].values.astype(float)
+        p11         = scat_data[key_1].values.astype(float)
+        ax1         = fig.add_subplot(gs[rinx,2])
+        ax1.scatter(p00,p11)
+
+        # Curve Fit Line Polynomial #########  
+        coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(p00, p11, 1, full = True)
+        ss_res_line_fit = ss_res[0]
+        line_fit = poly.polyval(p00, coefs)
+
+        ss_tot_line_fit      = np.sum( (p1 - np.mean(p1))**2 )
+        r_sqrd_line_fit      = 1 - (ss_res_line_fit / ss_tot_line_fit)
+        txt = []
+        txt.append('$N$ Shown = {!s}'.format(len(p00)))
+        txt.append('$N$ Dropped = {!s}'.format(len(dfc) - len(p00)))
+        txt.append('$r^2$ = {:0.2f}'.format(r_sqrd_line_fit))
+        ax1.plot(p00,line_fit,ls='--',label='\n'.join(txt))
+
+        ax1.legend(loc='lower right',fontsize='x-small')
         ax1.set_xlabel(key_0)
         ax1.set_ylabel(key_1)
 
@@ -642,7 +655,7 @@ def plot_season_analysis(all_results,output_dir='output'):
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = True
+    clear_cache = False
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
@@ -705,7 +718,6 @@ if __name__ == '__main__':
                 continue
             curve_combo_plot(result)
 
-        import ipdb; ipdb.set_trace()
         with open(pkl_fpath,'wb') as fl:
             print('PICKLING: {!s}'.format(pkl_fpath))
             pickle.dump(all_results,fl)
