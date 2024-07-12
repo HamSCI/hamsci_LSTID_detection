@@ -613,6 +613,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     params = []
     params.append('T_hr')
     params.append('amplitude_km')
+    params.append('is_lstid')
 
     df_lst = []
     df_inx = []
@@ -632,19 +633,16 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     # Force amplitudes to be positive.
     df.loc[:,'amplitude_km']    = np.abs(df['amplitude_km'])
 
+    # Set non-LSTID parameters to NaN
+    not_lstid = np.logical_not(df['is_lstid'])
+    for param in params:
+        if param == 'is_lstid':
+            continue
+        df.loc[not_lstid,param] = np.nan
+
     csv_fname   = '{!s}-{!s}_sinFit.csv'.format(sDate_str,eDate_str)
     csv_fpath   = os.path.join(output_dir,csv_fname)
     df.to_csv(csv_fpath)
-
-    # Eliminate waves with period > 5 hr.
-    tf = df['T_hr'] > 5
-    df.loc[tf,'T_hr']           = np.nan
-    df.loc[tf,'amplitude_km']   = np.nan
-
-    # Eliminate waves with amplitudes < 15 km.
-    tf = df['amplitude_km'] < 15
-    df.loc[tf,'T_hr']           = np.nan
-    df.loc[tf,'amplitude_km']   = np.nan
 
     # Plotting #############################
     nCols   = 3
@@ -656,18 +654,24 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
     fig     = plt.figure(figsize=figsize)
 
+    pct_overlap = None  # This needs to be computed explicitly for each comparison. Default to None so code does not break if it not computed.
+
     if compare_ds == 'MLW':
         # Load in Mary Lou West's Manual LSTID Analysis
+
+        # Set params of not LSTID days to NaNs.
+        not_lstid       = np.logical_not(df_mlw['MLW_is_lstid'])
+        df_mlw_lstid    = df_mlw.copy()
+        params  = df_mlw_lstid.keys()
+        for param in params:
+            if param in ['MLW_comment','MLW_is_lstid']:
+                continue
+            df_mlw_lstid.loc[not_lstid,param] = np.nan
+
         # Combine FFT and MLW analysis dataframes.
-        dfc = pd.concat([df,df_mlw],axis=1)
-
-        # Eliminate MLW_range_range = 0.
-        tf = dfc['MLW_range_range'] <= 0
-        dfc.loc[tf,'MLW_range_range']   = np.nan
-
-        # Eliminate MLW_tid_hours = 0.
-        tf = dfc['MLW_tid_hours'] <= 0
-        dfc.loc[tf,'MLW_tid_hours']   = np.nan
+        dfc             = pd.concat([df,df_mlw_lstid],axis=1)
+        dfc['agree']    = np.logical_not(np.logical_xor(dfc['is_lstid'].astype(bool),dfc['MLW_is_lstid'].astype(bool)))
+        pct_overlap     = 100. * (np.count_nonzero(dfc['agree']) / len(dfc))
 
         # Compare parameters - List of (df, lstid_mlw) keys to compare.
         cmps = []
@@ -700,7 +704,6 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
         p0  = dfc[key_0]
         p1  = dfc[key_1]
         tf  = np.logical_and(np.isfinite(p0.values.astype(float)),np.isfinite(p1.values.astype(float)))
-        pct_overlap = 100 * (np.count_nonzero(tf) / len(dfc))
 
         hndls   = []
         hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='Sine Fit',alpha=0.5)
@@ -741,7 +744,8 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 
     txt = []
     txt.append('LSTID Automatic Sinusoid Fit Compared with {!s} Manual Fit'.format(compare_ds))
-    txt.append('{:0.0f}% Overlap'.format(pct_overlap))
+    if pct_overlap is not None:
+        txt.append('{:0.0f}% Overlap'.format(pct_overlap))
     fig.text(0.5,1.0,'\n'.join(txt),ha='center',fontdict={'weight':'bold','size':'x-large'})
 
     if not os.path.exists(output_dir):
@@ -752,7 +756,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = True
+    clear_cache = False
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
