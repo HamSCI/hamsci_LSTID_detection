@@ -22,6 +22,41 @@ from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
 
+def load_df_mlw():
+    """
+    Load Mary Lou West's manual classification results into a datafram.
+
+    Apply an explicit classification rule to MLW's results:
+        1. TIDs must exist for more than 0 hours
+        2. LSTIDs should have periods between 1 and 5 hours.
+    """
+    import lstid_ham
+    lstid_mlw   = lstid_ham.LSTID_HAM()
+    df_mlw      = lstid_mlw.df.copy()
+    df_mlw      = df_mlw.set_index('date')
+    old_keys    = list(df_mlw.keys())
+    new_keys    = {x:'MLW_'+x for x in old_keys}
+    df_mlw      = df_mlw.rename(columns=new_keys)
+
+    # Explicitly classify MLW's results as LSTID or not.
+    crits   = []
+    # TIDs must exist for more than 0 hours
+    tf_tid_hrs          = df_mlw['MLW_tid_hours'].astype(float).fillna(0) > 0
+    crits.append(tf_tid_hrs)
+
+    # Additional criteria beyond duration.
+    mlw_lstid_criteria  = {}
+    mlw_lstid_criteria['MLW_period_hr'] = (1,5)
+
+    for key, crit in mlw_lstid_criteria.items():
+        result  = np.logical_and(df_mlw[key] >= crit[0], df_mlw[key] < crit[1])
+        crits.append(result)
+
+    df_mlw['MLW_is_lstid'] = np.logical_and.reduce(crits)
+    return df_mlw,mlw_lstid_criteria
+
+df_mlw, mlw_lstid_criteria  = load_df_mlw()
+
 def mpl_style():
     plt.rcParams['font.size']           = 18
     plt.rcParams['font.weight']         = 'bold'
@@ -285,7 +320,7 @@ def run_edge_detect(
 
             p0_sin_fit = {}
             p0_sin_fit['T_hr']           = sinFit[0]
-            p0_sin_fit['amplitude_km']   = sinFit[1]
+            p0_sin_fit['amplitude_km']   = np.abs(sinFit[1])
             p0_sin_fit['phase_hr']       = sinFit[2]
             p0_sin_fit['offset_km']      = sinFit[3]
             p0_sin_fit['slope_kmph']     = sinFit[4]
@@ -308,6 +343,20 @@ def run_edge_detect(
 
             data_detrend = sin_fit.copy()
 
+        # Classification
+        lstid_criteria = {}
+        lstid_criteria['T_hr']          = (0,5)
+        lstid_criteria['amplitude_km']  = (25,2000)
+        lstid_criteria['r2']            = (0.15,1.1)
+        
+        if p0_sin_fit != {}:
+            crits   = []
+            for key, crit in lstid_criteria.items():
+                val     = p0_sin_fit[key]
+                result  = np.logical_and(val >= crit[0], val < crit[1])
+                crits.append(result)
+            p0_sin_fit['is_lstid']  = np.all(crits)
+
         # Package SpotArray into XArray
         daDct               = {}
         daDct['data']       = arr
@@ -329,18 +378,19 @@ def run_edge_detect(
         result['p0_poly_fit']       = p0_poly_fit
         result['stability']         = stability
         result['data_detrend']      = data_detrend
-        result['metaData']  = meta  = {}
 
-        meta['date']        = date
-        meta['x_trim']      = x_trim
-        meta['y_trim']      = y_trim
-        meta['sigma']       = sigma
-        meta['qs']          = qs
-        meta['occurence_n'] = occurence_n
-        meta['i_max']       = i_max
-        meta['xlim']        = xlim
-        meta['winlim']      = winlim
-        meta['fitWinLim']   = fitWinLim
+        result['metaData']          = meta  = {}
+        meta['date']                = date
+        meta['x_trim']              = x_trim
+        meta['y_trim']              = y_trim
+        meta['sigma']               = sigma
+        meta['qs']                  = qs
+        meta['occurence_n']         = occurence_n
+        meta['i_max']               = i_max
+        meta['xlim']                = xlim
+        meta['winlim']              = winlim
+        meta['fitWinLim']           = fitWinLim
+        meta['lstid_criteria']      = lstid_criteria
 
         if not os.path.exists(cache_dir):
             os.mkdir(cache_dir)
@@ -364,11 +414,12 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     Input:
         result_dct: Dictionary of results produced by run_edge_detect().
     """
-    md          = result_dct.get('metaData')
-    date        = md.get('date')
-    xlim        = md.get('xlim')
-    winlim      = md.get('winlim')
-    fitWinLim   = md.get('fitWinLim')
+    md              = result_dct.get('metaData')
+    date            = md.get('date')
+    xlim            = md.get('xlim')
+    winlim          = md.get('winlim')
+    fitWinLim       = md.get('fitWinLim')
+    lstid_criteria  = md.get('lstid_criteria')
 
     arr             = result_dct.get('spotArr')
     med_lines       = result_dct.get('med_lines')
@@ -387,44 +438,45 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
     Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
     nCols   = 1
-    nRows   = 3
+    nRows   = 4
 
     axInx   = 0
-    figsize = (18,nRows*7)
+    figsize = (18,nRows*6)
 
     fig     = plt.figure(figsize=figsize)
     axs     = []
 
     # Plot Heatmap #########################
-    axInx   = axInx + 1
-    ax      = fig.add_subplot(nRows,nCols,axInx)
-    axs.append(ax)
+    for plot_fit in [False, True]:
+        axInx   = axInx + 1
+        ax      = fig.add_subplot(nRows,nCols,axInx)
+        axs.append(ax)
 
-    ax.set_title(f'| {date} |')
-    mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
-    plt.colorbar(mpbl,aspect=10,pad=cb_pad)
+        mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
+        plt.colorbar(mpbl,aspect=10,pad=cb_pad)
+        if not plot_fit:
+            ax.set_title(f'| {date} |')
+        else:
+            ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
 
-    ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
+            if p0_sin_fit != {}:
+                ax.plot(sin_fit.index,sin_fit+poly_fit,label='Sin Fit',color='white',lw=3,ls='--')
 
-    if p0_sin_fit != {}:
-        ax.plot(sin_fit.index,sin_fit+poly_fit,label='Sin Fit',color='white',lw=3,ls='--')
+            ax2 = ax.twinx()
+            ax2.plot(stability.index,stability,lw=2,color='0.5')
+            ax2.grid(False)
 
-    ax2 = ax.twinx()
-    ax2.plot(stability.index,stability,lw=2,color='0.5')
-    ax2.grid(False)
+            for wl in winlim:
+                ax.axvline(wl,color='0.8',ls='--',lw=2)
 
-    for wl in winlim:
-        ax.axvline(wl,color='0.8',ls='--',lw=2)
+            for wl in fitWinLim:
+                ax.axvline(wl,color='lime',ls='--',lw=2)
 
-    for wl in fitWinLim:
-        ax.axvline(wl,color='lime',ls='--',lw=2)
+            ax.legend(loc='lower right',fontsize='x-small',ncols=4)
 
-    ax.legend(loc='lower right',fontsize='x-small',ncols=4)
-    fmt_xaxis(ax,xlim)
-
-    ax.set_ylabel('Range [km]')
-#    ax.set_ylim(250,2750)
-    ax.set_ylim(1000,2000)
+        fmt_xaxis(ax,xlim)
+        ax.set_ylabel('Range [km]')
+        ax.set_ylim(1000,2000)
 
     # Plot Detrended and fit data. #########
     axInx   = axInx + 1
@@ -452,56 +504,81 @@ def curve_combo_plot(result_dct,cb_pad=0.04,
         ytl.set_visible(False)
     axs.append(ax)
 
-#    if date in df_mlw.index:
-#        mlw = df_mlw.loc[date,:]
-#    else:
-#        mlw = {}
-#    #ipdb> mlw
-#    #MLW_start_time         13.0
-#    #MLW_end_time           23.0
-#    #MLW_low_range_km      900.0
-#    #MLW_high_range_km    1500.0
-#    #MLW_tid_hours          10.0
-#    #MLW_range_range       600.0
-#    #MLW_cycles              4.0
-#    #MLW_period_hr           2.5
-#    #MLW_comment            nice
-#    #Name: 2018-11-09 00:00:00, dtype: object
-#
-##        result['sinFit_T_hr']   = sinFit_T_hr
-##        result['sinFit_amp']    = sinFit_amp 
-##        result['sinFit_phase']  = sinFit_phase
-##        result['sinFit_offset'] = sinFit_offset
-#
-#    txt = []
-#    txt.append('               MLW          sinFit       FFT')
-#    txt.append('T [hr]:        {:5.1f}      {:5.1f}      {:5.1f}'.format(mlw.get('MLW_period_hr',np.nan),result['sinFit_T_hr'],result['004_filtered_Tmax_hr']))
-#    txt.append('Range_Range:   {:5.1f}'.format(mlw.get('MLW_range_range',np.nan)))
-#    txt.append('MLW TID Hours: {:5.1f}'.format(mlw.get('MLW_tid_hours',np.nan)))
-#    txt.append('MLW Comment:   {!s}'.format(mlw.get('MLW_comment')))
-
     fontdict = {'weight':'normal','family':'monospace'}
     
     txt = []
-    txt.append('2nd Deg Poly Fit Parameters')
+    txt.append('2nd Deg Poly Fit')
     txt.append('(Used for Detrending)')
     for key, val in p0_poly_fit.items():
         if key == 'r2':
             txt.append('{!s}: {:0.2f}'.format(key,val))
         else:
             txt.append('{!s}: {:0.1f}'.format(key,val))
-    ax.text(0.05,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
+    ax.text(0.05,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
 
     txt = []
-    txt.append('Sinusoid Fit Parameters')
+    txt.append('Sinusoid Fit')
     for key, val in p0_sin_fit.items():
         if key == 'r2':
             txt.append('{!s}: {:0.2f}'.format(key,val))
+        elif key == 'is_lstid':
+            txt.append('{!s}: {!s}'.format(key,val))
         else:
             txt.append('{!s}: {:0.1f}'.format(key,val))
-    ax.text(0.5,0.9,'\n'.join(txt),fontdict=fontdict,va='top')
+    ax.text(0.35,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
+
+    if date in df_mlw.index:
+        mlw = df_mlw.loc[date,:]
+    else:
+        mlw = {}
+    txt = []
+    txt.append('MLW Manual Fit')
+    for key, val in mlw.items():
+        txt.append('{!s}: {!s}'.format(key,val))
+    txt.append('')
+    txt.append('MLW LSTID Criteria:')
+    for key, val in mlw_lstid_criteria.items():
+        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
+    ax.text(0.65,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
+
+    txt = []
+    txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
+    for key, val in lstid_criteria.items():
+        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
+    ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
 
     fig.tight_layout()
+
+    def result_color(result):
+        if result == True:
+            color = 'green'
+        elif result == False:
+            color = 'red'
+        else:
+            color = 'black'
+        return color    
+    
+    results = {}
+    results['sin_is_lstid']  = {'msg':'Automatic LSTID', 'classification': p0_sin_fit.get('is_lstid')}
+    results['mlw_is_lstid']  = {'msg':'MLW LSTID',       'classification': mlw.get('MLW_is_lstid')}
+    try:
+        agree = not np.logical_xor(results['sin_is_lstid']['classification'],results['mlw_is_lstid']['classification'])
+    except:
+        agree = None
+    results['agree']         = {'msg':'Agree',           'classification': agree}
+   
+    for inx,(key, result) in enumerate(results.items()):
+        msg = result['msg']
+        res = result['classification']
+
+        fdct    = {}
+        fdct['x']           = 0.05 + inx*0.35
+        fdct['y']           = 0.05
+        fdct['s']           = '{!s}: {!s}'.format(msg,res)
+        fdct['fontdict']    = {'weight':'bold','size':'large'}
+        fdct['color']       = result_color(res)
+        fdct['transform']   = ax.transAxes
+        ax.text(**fdct)
 
     # Account for colorbars and line up all axes.
     for ax_inx, ax in enumerate(axs):
@@ -558,7 +635,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     csv_fname   = '{!s}-{!s}_sinFit.csv'.format(sDate_str,eDate_str)
     csv_fpath   = os.path.join(output_dir,csv_fname)
     df.to_csv(csv_fpath)
-    
+
     # Eliminate waves with period > 5 hr.
     tf = df['T_hr'] > 5
     df.loc[tf,'T_hr']           = np.nan
@@ -581,16 +658,6 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 
     if compare_ds == 'MLW':
         # Load in Mary Lou West's Manual LSTID Analysis
-        import lstid_ham
-        mpl_style()
-
-        lstid_mlw   = lstid_ham.LSTID_HAM()
-        df_mlw      = lstid_mlw.df.copy()
-        df_mlw      = df_mlw.set_index('date')
-        old_keys    = list(df_mlw.keys())
-        new_keys    = {x:'MLW_'+x for x in old_keys}
-        df_mlw      = df_mlw.rename(columns=new_keys)
-
         # Combine FFT and MLW analysis dataframes.
         dfc = pd.concat([df,df_mlw],axis=1)
 
@@ -685,7 +752,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = False
+    clear_cache = True
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
