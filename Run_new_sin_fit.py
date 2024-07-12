@@ -14,6 +14,7 @@ import datetime
 import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from operator import itemgetter
 
 from scipy import signal
 from scipy.ndimage import gaussian_filter
@@ -21,6 +22,8 @@ from scipy.optimize import curve_fit
 from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
+
+lstid_T_hr_lim    = (1, 4.5)
 
 def load_df_mlw():
     """
@@ -46,7 +49,7 @@ def load_df_mlw():
 
     # Additional criteria beyond duration.
     mlw_lstid_criteria  = {}
-    mlw_lstid_criteria['MLW_period_hr'] = (1,5)
+    mlw_lstid_criteria['MLW_period_hr'] = lstid_T_hr_lim    
 
     for key, crit in mlw_lstid_criteria.items():
         result  = np.logical_and(df_mlw[key] >= crit[0], df_mlw[key] < crit[1])
@@ -308,33 +311,61 @@ def run_edge_detect(
             # Detrend Data Using 2nd Degree Polynomial
             data_detrend         = data - poly_fit
 
-            # Curve Fit Sinusoid ################### 
-            guess = {}
-            guess['T_hr']           = 3.
-            guess['amplitude_km']   = np.ptp(data_detrend)/2.
-            guess['phase_hr']       = 0.
-            guess['offset_km']      = np.mean(data_detrend)
-            guess['slope_kmph']     = 0.
+#            # Get MLW's initial guess
+#            if date in df_mlw.index:
+#                mlw = df_mlw.loc[date,:]
+#            else:
+#                mlw = {}
+#            guess_T_hr = mlw.get('MLW_period_hr',3.)
 
-            sinFit,pcov,infodict,mesg,ier = curve_fit(sinusoid, tt_sec, data_detrend, p0=list(guess.values()),full_output=True)
+            T_hr_guesses = np.arange(1,4.5,0.5)
 
-            p0_sin_fit = {}
-            p0_sin_fit['T_hr']           = sinFit[0]
-            p0_sin_fit['amplitude_km']   = np.abs(sinFit[1])
-            p0_sin_fit['phase_hr']       = sinFit[2]
-            p0_sin_fit['offset_km']      = sinFit[3]
-            p0_sin_fit['slope_kmph']     = sinFit[4]
+            fit_results = []
+            for T_hr_guess in T_hr_guesses:
+                # Curve Fit Sinusoid ################### 
+                guess = {}
+                guess['T_hr']           = T_hr_guess
+                guess['amplitude_km']   = np.ptp(data_detrend)/2.
+                guess['phase_hr']       = 0.
+                guess['offset_km']      = np.mean(data_detrend)
+                guess['slope_kmph']     = 0.
 
-            sin_fit = sinusoid(tt_sec, **p0_sin_fit)
-            sin_fit = pd.Series(sin_fit,index=fit_times)
+                try:
+                    sinFit,pcov,infodict,mesg,ier = curve_fit(sinusoid, tt_sec, data_detrend, p0=list(guess.values()),full_output=True)
+                except:
+                    continue
 
-            # Calculate r2 for Sinusoid Fit
-            ss_res_sin_fit              = np.sum( (data_detrend - sin_fit)**2)
-            ss_tot_sin_fit              = np.sum( (data_detrend - np.mean(data_detrend))**2 )
-            r_sqrd_sin_fit              = 1 - (ss_res_sin_fit / ss_tot_sin_fit)
-            p0_sin_fit['r2']            = r_sqrd_sin_fit
+                p0_sin_fit = {}
+                p0_sin_fit['T_hr']           = sinFit[0]
+                p0_sin_fit['amplitude_km']   = np.abs(sinFit[1])
+                p0_sin_fit['phase_hr']       = sinFit[2]
+                p0_sin_fit['offset_km']      = sinFit[3]
+                p0_sin_fit['slope_kmph']     = sinFit[4]
 
+                sin_fit = sinusoid(tt_sec, **p0_sin_fit)
+                sin_fit = pd.Series(sin_fit,index=fit_times)
+
+                # Calculate r2 for Sinusoid Fit
+                ss_res_sin_fit              = np.sum( (data_detrend - sin_fit)**2)
+                ss_tot_sin_fit              = np.sum( (data_detrend - np.mean(data_detrend))**2 )
+                r_sqrd_sin_fit              = 1 - (ss_res_sin_fit / ss_tot_sin_fit)
+                p0_sin_fit['r2']            = r_sqrd_sin_fit
+
+                fit_results.append(p0_sin_fit)
         except:
+            fit_results = []
+
+        if len(fit_results) > 0:
+            fit_results = sorted(fit_results, key=itemgetter('r2'), reverse=True)
+#                for fr in fit_results:
+#                    print(fr['r2'],fr['T_hr'])
+            # Pick the best fit sinusoid.
+            p0_sin_fit  = fit_results[0]
+            p0 = p0_sin_fit.copy()
+            del p0['r2']
+            sin_fit     = sinusoid(tt_sec, **p0)
+            sin_fit     = pd.Series(sin_fit,index=fit_times)
+        else:
             sin_fit     = pd.Series(np.zeros(len(fit_times))*np.nan,index=fit_times)
             p0_sin_fit  = {}
 
@@ -345,8 +376,8 @@ def run_edge_detect(
 
         # Classification
         lstid_criteria = {}
-        lstid_criteria['T_hr']          = (0,5)
-        lstid_criteria['amplitude_km']  = (25,2000)
+        lstid_criteria['T_hr']          = lstid_T_hr_lim    
+        lstid_criteria['amplitude_km']  = (20,2000)
         lstid_criteria['r2']            = (0.15,1.1)
         
         if p0_sin_fit != {}:
@@ -756,7 +787,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = False
+    clear_cache = True
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
@@ -826,7 +857,7 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
-    for compare_ds in ['MLW','NAF']:
+    for compare_ds in ['MLW']:
         plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
 
 import ipdb; ipdb.set_trace()
