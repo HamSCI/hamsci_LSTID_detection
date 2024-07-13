@@ -320,7 +320,7 @@ def run_edge_detect(
 
             T_hr_guesses = np.arange(1,4.5,0.5)
 
-            fit_results = []
+            all_sin_fits = []
             for T_hr_guess in T_hr_guesses:
                 # Curve Fit Sinusoid ################### 
                 guess = {}
@@ -350,19 +350,22 @@ def run_edge_detect(
                 ss_tot_sin_fit              = np.sum( (data_detrend - np.mean(data_detrend))**2 )
                 r_sqrd_sin_fit              = 1 - (ss_res_sin_fit / ss_tot_sin_fit)
                 p0_sin_fit['r2']            = r_sqrd_sin_fit
+                p0_sin_fit['T_hr_guess']    = T_hr_guess
 
-                fit_results.append(p0_sin_fit)
+                all_sin_fits.append(p0_sin_fit)
         except:
-            fit_results = []
+            all_sin_fits = []
 
-        if len(fit_results) > 0:
-            fit_results = sorted(fit_results, key=itemgetter('r2'), reverse=True)
-#                for fr in fit_results:
+        if len(all_sin_fits) > 0:
+            all_sin_fits = sorted(all_sin_fits, key=itemgetter('r2'), reverse=True)
+#                for fr in all_sin_fits:
 #                    print(fr['r2'],fr['T_hr'])
             # Pick the best fit sinusoid.
-            p0_sin_fit  = fit_results[0]
-            p0 = p0_sin_fit.copy()
+            p0_sin_fit                  = all_sin_fits[0]
+            p0                          = p0_sin_fit.copy()
+            all_sin_fits[0]['selected'] = True
             del p0['r2']
+            del p0['T_hr_guess']
             sin_fit     = sinusoid(tt_sec, **p0)
             sin_fit     = pd.Series(sin_fit,index=fit_times)
         else:
@@ -409,6 +412,7 @@ def run_edge_detect(
         result['p0_poly_fit']       = p0_poly_fit
         result['stability']         = stability
         result['data_detrend']      = data_detrend
+        result['all_sin_fits']      = all_sin_fits
 
         result['metaData']          = meta  = {}
         meta['date']                = date
@@ -784,10 +788,133 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
 
+def plot_sin_fit_analysis(all_results,output_dir='output'):
+    """
+    Plot an analysis of the sin fits for the entire season.
+    """
+
+    sDate   = min(all_results.keys())
+    eDate   = max(all_results.keys())
+
+    sDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = sDate.strftime('%Y%m%d')
+    png_fname   = '{!s}-{!s}_sinFitAnalysis.png'.format(sDate_str,eDate_str)
+    png_fpath   = os.path.join(output_dir,png_fname)
+
+    # Create parameter dataframe.
+    params = []
+    params.append('T_hr')
+    params.append('amplitude_km')
+    params.append('phase_hr')
+    params.append('offset_km')
+    params.append('slope_kmph')
+    params.append('r2')
+    params.append('T_hr_guess')
+    params.append('selected')
+    params.append('is_lstid')
+
+    df_lst = []
+    df_inx = []
+    for date,results in all_results.items():
+        if results is None:
+            continue
+
+        all_sin_fits = results.get('all_sin_fits')
+        for p0_sin_fit in all_sin_fits:
+            tmp = {}
+            for param in params:
+                if param in ['selected']:
+                    tmp[param] = p0_sin_fit.get(param,False)
+                else:
+                    tmp[param] = p0_sin_fit.get(param,np.nan)
+
+            df_lst.append(tmp)
+            df_inx.append(date)
+
+    df          = pd.DataFrame(df_lst,index=df_inx)
+
+    # Plotting #############################
+    nrows   = 2
+    ncols   = 1
+    ax_inx  = 0
+    axs     = []
+
+    figsize = (18,nrows*5)
+    fig     = plt.figure(figsize=figsize)
+    
+    ax_inx  += 1
+    ax      = fig.add_subplot(nrows,ncols,ax_inx)
+    axs.append(ax)
+    ax_0    = ax
+
+    cmap    = 'rainbow'
+
+    xx      = df.index
+    yy      = df.T_hr
+    color   = df.T_hr_guess
+    r2      = df.r2.values
+    r2[r2 < 0]  = 0
+    alpha   = r2
+    mpbl    = ax.scatter(xx,yy,c=color,alpha=alpha,marker='o',
+                         vmin=0,vmax=5,cmap=cmap)
+
+    tf      = df.selected
+#    ax.scatter(xx[tf],yy[tf],c=color[tf],
+#                         marker='*',s=250,label='Selected Fit',
+#                         vmin=0,vmax=5,cmap='gist_rainbow')
+    ax.scatter(xx[tf],yy[tf],c=color[tf],ec='black',
+                         marker='o',label='Selected Fit',
+                         vmin=0,vmax=5,cmap=cmap)
+    fig.colorbar(mpbl,label='T_hr Guess')
+
+    # Plot bars for days that meet LSTID criteria.
+    tf      = np.logical_and(df.selected,df.is_lstid)
+    trans   = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
+    hndl    = ax.bar(df.index[tf],1,width=1,color='0.8',align='edge',
+                     label='Meets LSTID Criteria',alpha=0.5,zorder=-1,transform=trans)
+
+    ax.legend(loc='upper right')
+#    ax.set_ylim(0,10)
+
+    ax.set_xlabel('Date')
+    ax.set_ylabel('T_hr Fit')
+
+    # Plot information .####################
+    ax_inx  += 1
+    ax      = fig.add_subplot(nrows,ncols,ax_inx)
+    ax.grid(False)
+    for xtl in ax.get_xticklabels():
+        xtl.set_visible(False)
+    for ytl in ax.get_yticklabels():
+        ytl.set_visible(False)
+    fontdict = {'weight':'normal','family':'monospace'}
+
+    lstid_criteria  = all_results[sDate]['metaData']['lstid_criteria']
+    txt = []
+    txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
+    for key, val in lstid_criteria.items():
+        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
+    ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
+
+    axs.append(ax)
+    fig.tight_layout()
+
+    # Account for colorbars and line up all axes.
+    for ax_inx, ax in enumerate(axs):
+        if ax_inx == 0:
+            continue
+        adjust_axes(ax,axs[0])
+
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    print('   Saving: {!s}'.format(png_fpath))
+    fig.savefig(png_fpath,bbox_inches='tight')
+    import ipdb; ipdb.set_trace()
+
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = True
+    clear_cache = False
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
@@ -857,7 +984,11 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
+    plot_sin_fit_analysis(all_results,output_dir=output_dir)
+
+    import ipdb; ipdb.set_trace()
     for compare_ds in ['MLW']:
         plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
+
 
 import ipdb; ipdb.set_trace()
