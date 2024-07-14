@@ -25,6 +25,61 @@ from threshold_edge_detection import lowess_smooth, measure_thresholds
 
 lstid_T_hr_lim    = (1, 4.5)
 
+class SuperDARNMSTID(object):
+    def __init__(self,param='meanSubIntSpect_by_rtiCnt',radars=None,
+                 season = '20181101_20190501',
+                output_dir='output',mstid_data_dir=None,
+                write_csvs=True,calculate_reduced=False):
+
+        import Figure_3_stackplot as fig3
+
+        if mstid_data_dir is None:
+            mstid_data_dir = os.path.join('data','mongo_out','mstid_GSMR_fitexfilter_rtiThresh-0.25','guc')
+
+        if radars is None:
+            radars  = []
+            # 'High Latitude Radars'
+            radars.append('pgr')
+            radars.append('sas')
+            radars.append('kap')
+            radars.append('gbr')
+            # 'Mid Latitude Radars'
+            radars.append('cvw')
+            radars.append('cve')
+            radars.append('fhw')
+            radars.append('fhe')
+            radars.append('bks')
+            radars.append('wal')
+
+        # Load SuperDARN MSTID Index Data
+        po = fig3.ParameterObject(param,radars=radars,seasons=[season],
+                output_dir=output_dir,default_data_dir=mstid_data_dir,
+                calculate_reduced=calculate_reduced)
+
+        self.season         = season
+        self.param          = param
+        self.radars         = radars
+        self.mstid_data_dir = mstid_data_dir  
+        self.fig3           = fig3
+        self.po             = po # ParameterObject
+
+    def plot_ax(self,ax,sDate=None,eDate=None,xlabels=True):
+        """
+        Plot SuperDARN MSTID Index onto an axis.
+        """
+        if sDate is None:
+            spl = self.season.split('_')[0]
+            sDate   = datetime.datetime.strptime(spl,'%Y%m%d')
+
+        if eDate is None:
+            spl = self.season.split('_')[1]
+            eDate   = datetime.datetime.strptime(spl,'%Y%m%d')
+
+        data_df = self.po.data[self.season]['df']
+        ax_info = self.fig3.plot_mstid_values(data_df,ax,radars=self.radars,param=self.param,xlabels=xlabels,
+                sDate=sDate,eDate=eDate)
+
+
 def load_df_mlw():
     """
     Load Mary Lou West's manual classification results into a datafram.
@@ -834,13 +889,19 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
     df          = pd.DataFrame(df_lst,index=df_inx)
 
     # Plotting #############################
-    nrows   = 2
+    nrows   = 3
     ncols   = 1
     ax_inx  = 0
     axs     = []
 
-    figsize = (18,nrows*5)
+    figsize = (24,nrows*5)
     fig     = plt.figure(figsize=figsize)
+
+    ax_inx  += 1
+    ax      = fig.add_subplot(nrows,ncols,ax_inx)
+    axs.append(ax)
+    sd_mstid = SuperDARNMSTID()
+    sd_mstid.plot_ax(ax,sDate=sDate,eDate=eDate)
     
     ax_inx  += 1
     ax      = fig.add_subplot(nrows,ncols,ax_inx)
@@ -859,19 +920,22 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
                          vmin=0,vmax=5,cmap=cmap)
 
     tf      = df.selected
-#    ax.scatter(xx[tf],yy[tf],c=color[tf],
-#                         marker='*',s=250,label='Selected Fit',
-#                         vmin=0,vmax=5,cmap='gist_rainbow')
     ax.scatter(xx[tf],yy[tf],c=color[tf],ec='black',
                          marker='o',label='Selected Fit',
                          vmin=0,vmax=5,cmap=cmap)
     fig.colorbar(mpbl,label='T_hr Guess')
 
     # Plot bars for days that meet LSTID criteria.
-    tf      = np.logical_and(df.selected,df.is_lstid)
     trans   = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
+
+#    tf      = np.logical_and(df.selected,df.is_lstid)
+#    hndl    = ax.bar(df.index[tf],1,width=1,color='0.8',align='edge',
+#                     label='Meets LSTID Criteria',alpha=0.5,zorder=-1,transform=trans)
+
+    best_fit_T_hr_min    = 3.
+    tf      = np.logical_and(df.selected,df.T_hr > best_fit_T_hr_min)
     hndl    = ax.bar(df.index[tf],1,width=1,color='0.8',align='edge',
-                     label='Meets LSTID Criteria',alpha=0.5,zorder=-1,transform=trans)
+                     label='Best Fit T_hr > {!s}'.format(best_fit_T_hr_min),alpha=0.5,zorder=-1,transform=trans)
 
     ax.legend(loc='upper right')
 #    ax.set_ylim(0,10)
@@ -889,21 +953,19 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
         ytl.set_visible(False)
     fontdict = {'weight':'normal','family':'monospace'}
 
-    lstid_criteria  = all_results[sDate]['metaData']['lstid_criteria']
-    txt = []
-    txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
-    for key, val in lstid_criteria.items():
-        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-    ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
+#    lstid_criteria  = all_results[sDate]['metaData']['lstid_criteria']
+#    txt = []
+#    txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
+#    for key, val in lstid_criteria.items():
+#        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
+#    ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
 
     axs.append(ax)
     fig.tight_layout()
 
     # Account for colorbars and line up all axes.
     for ax_inx, ax in enumerate(axs):
-        if ax_inx == 0:
-            continue
-        adjust_axes(ax,axs[0])
+        adjust_axes(ax,ax_0)
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
