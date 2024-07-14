@@ -29,7 +29,7 @@ class SuperDARNMSTID(object):
     def __init__(self,param='meanSubIntSpect_by_rtiCnt',radars=None,
                  season = '20181101_20190501',
                 output_dir='output',mstid_data_dir=None,
-                write_csvs=True,calculate_reduced=False):
+                write_csvs=True,calculate_reduced=False,cache_file=None):
 
         import Figure_3_stackplot as fig3
 
@@ -52,9 +52,19 @@ class SuperDARNMSTID(object):
             radars.append('wal')
 
         # Load SuperDARN MSTID Index Data
-        po = fig3.ParameterObject(param,radars=radars,seasons=[season],
-                output_dir=output_dir,default_data_dir=mstid_data_dir,
-                calculate_reduced=calculate_reduced)
+        if (cache_file is None) or (not os.path.exists(cache_file)):
+            po = fig3.ParameterObject(param,radars=radars,seasons=[season],
+                    output_dir=output_dir,default_data_dir=mstid_data_dir,
+                    calculate_reduced=calculate_reduced)
+
+        if cache_file is not None:
+            if not os.path.exists(cache_file):
+                with open(cache_file,'wb') as pkl:
+                    pickle.dump(po,pkl)
+            else:
+                print('Using Cached SD MSTID File: {!s}'.format(cache_file))
+                with open(cache_file,'rb') as pkl:
+                    po = pickle.load(pkl)
 
         self.season         = season
         self.param          = param
@@ -900,7 +910,9 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
     ax_inx  += 1
     ax      = fig.add_subplot(nrows,ncols,ax_inx)
     axs.append(ax)
-    sd_mstid = SuperDARNMSTID()
+
+    sd_cache    = os.path.join(cache_dir,'sd_mstid.pkl')
+    sd_mstid = SuperDARNMSTID(cache_file=sd_cache)
     sd_mstid.plot_ax(ax,sDate=sDate,eDate=eDate)
     
     ax_inx  += 1
@@ -920,6 +932,7 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
                          vmin=0,vmax=5,cmap=cmap)
 
     tf      = df.selected
+    df_sel  = df[tf].copy() # Data frame with fits that have been selected as good.
     ax.scatter(xx[tf],yy[tf],c=color[tf],ec='black',
                          marker='o',label='Selected Fit',
                          vmin=0,vmax=5,cmap=cmap)
@@ -938,7 +951,7 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
                      label='Best Fit T_hr > {!s}'.format(best_fit_T_hr_min),alpha=0.5,zorder=-1,transform=trans)
 
     ax.legend(loc='upper right')
-#    ax.set_ylim(0,10)
+    ax.set_ylim(0,10)
 
     ax.set_xlabel('Date')
     ax.set_ylabel('T_hr Fit')
@@ -946,6 +959,7 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
     # Plot information .####################
     ax_inx  += 1
     ax      = fig.add_subplot(nrows,ncols,ax_inx)
+    axs.append(ax)
     ax.grid(False)
     for xtl in ax.get_xticklabels():
         xtl.set_visible(False)
@@ -960,7 +974,6 @@ def plot_sin_fit_analysis(all_results,output_dir='output'):
 #        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
 #    ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
 
-    axs.append(ax)
     fig.tight_layout()
 
     # Account for colorbars and line up all axes.
