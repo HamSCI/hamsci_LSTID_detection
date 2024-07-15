@@ -176,3 +176,4 @@ data_files/
 labels/
 bokeh_cache/
 Bokeh-Sandbox.ipynb
+data/
