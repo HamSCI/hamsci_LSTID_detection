@@ -13,6 +13,7 @@ import math
 import datetime
 import seaborn as sns
 import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 from operator import itemgetter
 
