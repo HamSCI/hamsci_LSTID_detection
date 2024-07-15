@@ -923,14 +923,14 @@ def plot_sin_fit_analysis(all_results,
     df_sel      = df[df.selected].copy() # Data frame with fits that have been selected as good.
 
     # Plotting #############################
-    nrows   = 5
+    nrows   = 7
     ncols   = 1
     ax_inx  = 0
     axs     = []
 
     cbar_info = {} # Keep track of colorbar info in a dictionary to plot at the end after fig.tight_layout() because of issues with cbar placement.
 
-    figsize = (30,nrows*5.5)
+    figsize = (30,nrows*6.5)
     fig     = plt.figure(figsize=figsize)
 
     # ax with SuperDARN MSTID Index ################################################
@@ -960,8 +960,14 @@ def plot_sin_fit_analysis(all_results,
     result  = mca.plot_ax(ax,ylabel_fontdict=ylabel_fontdict,plot_cbar=False,**prmd)
     ltr = '({!s}) '.format(letters[ax_inx-1])
     ax.set_title(ltr+'MERRA-2 50\N{DEGREE SIGN} N Lat Zonal Winds + CIPS & AIRS GW Variance',loc='left')
-    fig3.my_xticks(sDate,eDate,ax,labels=(ax_inx==nrows),plot_axvline=False)
+    fig3.my_xticks(sDate,eDate,ax,fmt='%d %b',plot_axvline=False)
     ax.set_xlabel('')
+
+    # December 25, 2018
+    line_lw  = 8
+    line_color = 'black'
+    ax.axvline(datetime.datetime(2018,12,25),lw=line_lw,color=line_color,label='25 Dec 2018')
+    ax.axvline(datetime.datetime(2019,1,2),lw=line_lw,color=line_color,label='2 Jan 2019')
 
     cbar_info[ax_inx] = cbd = {}
     cbd['ax']       = ax
@@ -982,7 +988,13 @@ def plot_sin_fit_analysis(all_results,
     prmd['vmin']    = 0
     prmd['vmax']    = 5
 
-    for param in ['amplitude_km','T_hr']:
+    prmds['r2'] = prmd = {}
+    prmd['title']   = 'Ham Radio Fit $r^2$'
+    prmd['label']   = '$r^24'
+    prmd['vmin']    = 0
+    prmd['vmax']    = 1
+
+    for param in ['amplitude_km','T_hr','r2']:
         prmd            = prmds.get(param)
         title           = prmd.get('title',param)
         label           = prmd.get('label',param)
@@ -1004,12 +1016,22 @@ def plot_sin_fit_analysis(all_results,
         norm            = mpl.colors.Normalize(vmin=vmin,vmax=vmax)
         mpbl            = mpl.cm.ScalarMappable(norm,cmap)
         color           = mpbl.to_rgba(yy)
-#        ax.plot(xx,yy_raw)
-        ax.plot(xx,yy)
+        ax.plot(xx,yy_raw,color='0.5',label='Raw Data')
+        ax.plot(xx,yy,color='blue',lw=3,label='{!s} Day Rolling Mean'.format(rolling_days))
         ax.scatter(xx,yy,marker='o',c=color)
+        ax.legend(loc='upper right',ncols=2)
+
+        # December 25, 2018
+        line_lw  = 8
+        line_color = 'black'
+        ax.axvline(datetime.datetime(2018,12,25),lw=line_lw,color=line_color,label='25 Dec 2018')
+        ax.axvline(datetime.datetime(2019,1,2),lw=line_lw,color=line_color,label='2 Jan 2019')
+
 
         trans           = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
         hndl            = ax.bar(xx,1,width=1,color=color,align='edge',zorder=-1,transform=trans,alpha=0.5)
+
+
 
         cbar_info[ax_inx] = cbd = {}
         cbd['ax']       = ax
@@ -1017,7 +1039,7 @@ def plot_sin_fit_analysis(all_results,
         cbd['mpbl']     = mpbl
 
         ax.set_ylabel(label,fontdict=ylabel_fontdict)
-        fig3.my_xticks(sDate,eDate,ax,labels=(ax_inx==nrows))
+        fig3.my_xticks(sDate,eDate,ax,fmt='%d %b')
         ltr = '({!s}) '.format(letters[ax_inx-1])
         ax.set_title(ltr+title, loc='left')
 
@@ -1043,27 +1065,30 @@ def plot_sin_fit_analysis(all_results,
     ax.set_title('')
     ax.set_xlabel('')
 
-#    # ax with LSTID T_hr Fitting Analysis ##########################################    
-#    ax_inx  += 1
-#    ax      = fig.add_subplot(nrows,ncols,ax_inx)
-#    axs.append(ax)
-#    ax_0    = ax
-#
-#
-#    xx      = df.index
-#    yy      = df.T_hr
-#    color   = df.T_hr_guess
-#    r2      = df.r2.values
-#    r2[r2 < 0]  = 0
-#    alpha   = r2
-#    mpbl    = ax.scatter(xx,yy,c=color,alpha=alpha,marker='o',
-#                         vmin=T_hr_vmin,vmax=T_hr_vmax,cmap=T_hr_cmap)
-#
-#    ax.scatter(df_sel.index,df_sel.T_hr,c=df_sel.T_hr_guess,ec='black',
-#                         marker='o',label='Selected Fit',
-#                         vmin=T_hr_vmin,vmax=T_hr_vmax,cmap=T_hr_cmap)
-#    fig.colorbar(mpbl,label='T_hr Guess')
-#
+    # ax with LSTID T_hr Fitting Analysis ##########################################    
+    ax_inx  += 1
+    ax      = fig.add_subplot(nrows,ncols,ax_inx)
+    axs.append(ax)
+    ax_0    = ax
+
+
+    xx      = df.index
+    yy      = df.T_hr
+    color   = df.T_hr_guess
+    r2      = df.r2.values
+    r2[r2 < 0]  = 0
+    alpha   = r2
+    mpbl    = ax.scatter(xx,yy,c=color,alpha=alpha,marker='o',
+                         vmin=T_hr_vmin,vmax=T_hr_vmax,cmap=T_hr_cmap)
+
+    ax.scatter(df_sel.index,df_sel.T_hr,c=df_sel.T_hr_guess,ec='black',
+                         marker='o',label='Selected Fit',
+                         vmin=T_hr_vmin,vmax=T_hr_vmax,cmap=T_hr_cmap)
+    cbar_info[ax_inx] = cbd = {}
+    cbd['ax']       = ax
+    cbd['label']    = 'T_hr Guess'
+    cbd['mpbl']     = mpbl
+
 #    # Plot bars for days that meet LSTID criteria.
 #    trans   = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
 ##    tf      = np.logical_and(df.selected,df.is_lstid)
@@ -1074,13 +1099,11 @@ def plot_sin_fit_analysis(all_results,
 #    tf      = np.logical_and(df.selected,df.T_hr > best_fit_T_hr_min)
 #    hndl    = ax.bar(df.index[tf],1,width=1,color='0.8',align='edge',
 #                     label='Best Fit T_hr > {!s}'.format(best_fit_T_hr_min),alpha=0.5,zorder=-1,transform=trans)
-#
-#    ax.legend(loc='upper right')
-#    ax.set_ylim(0,10)
-#
-#    ax.set_xlim(sDate,eDate)
-#    ax.set_xlabel('Date')
-#    ax.set_ylabel('T_hr Fit')
+
+    ax.legend(loc='upper right')
+    ax.set_ylim(0,10)
+    ax.set_ylabel('T_hr Fit')
+    fig3.my_xticks(sDate,eDate,ax,labels=(ax_inx==nrows))
 
 #    # ax with Plot Information #####################################################
 #    ax_inx  += 1
@@ -1116,12 +1139,11 @@ def plot_sin_fit_analysis(all_results,
         os.mkdir(output_dir)
     print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
-    import ipdb; ipdb.set_trace()
 
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = True
+    clear_cache = False
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
@@ -1193,8 +1215,7 @@ if __name__ == '__main__':
     print('Processing and plotting time: {!s}'.format(toc-tic))
     plot_sin_fit_analysis(all_results,output_dir=output_dir)
 
-    import ipdb; ipdb.set_trace()
-    for compare_ds in ['MLW']:
+    for compare_ds in ['MLW','NAF']:
         plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
 
 
