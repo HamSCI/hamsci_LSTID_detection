@@ -511,7 +511,7 @@ def run_edge_detect(
     return result
 
 def curve_combo_plot(result_dct,cb_pad=0.125,
-                     output_dir=os.path.join('output','daily_plots'),mlw_compare=False):
+                     output_dir=os.path.join('output','daily_plots'),mlw_compare=True):
                      
     """
     Make a curve combo stackplot that includes:
@@ -624,7 +624,7 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
             txt.append('{!s}: {:0.2f}'.format(key,val))
         else:
             txt.append('{!s}: {:0.1f}'.format(key,val))
-    ax.text(0.05,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
+    ax.text(0.01,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
 
     txt = []
     txt.append('Sinusoid Fit')
@@ -638,28 +638,28 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
             txt.append('{!s}: {!s}'.format(key,val))
         else:
             txt.append('{!s}: {:0.1f}'.format(key,val))
-    ax.text(0.40,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
+    ax.text(0.30,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
 
     if mlw_compare is True:
-        if date in df_mlw.index:
-            mlw = df_mlw.loc[date,:]
-        else:
-            mlw = {}
-        txt = []
-        txt.append('MLW Manual Fit')
-        for key, val in mlw.items():
-            txt.append('{!s}: {!s}'.format(key,val))
-        txt.append('')
-        txt.append('MLW LSTID Criteria:')
-        for key, val in mlw_lstid_criteria.items():
-            txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-        ax.text(0.65,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
+#        if date in df_mlw.index:
+#            mlw = df_mlw.loc[date,:]
+#        else:
+#            mlw = {}
+#        txt = []
+#        txt.append('MLW Manual Fit')
+#        for key, val in mlw.items():
+#            txt.append('{!s}: {!s}'.format(key,val))
+#        txt.append('')
+#        txt.append('MLW LSTID Criteria:')
+#        for key, val in mlw_lstid_criteria.items():
+#            txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
+#        ax.text(0.65,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
 
         txt = []
         txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
         for key, val in lstid_criteria.items():
             txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-        ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
+        ax.text(0.01,0.3,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
 
         fig.tight_layout()
 
@@ -674,20 +674,20 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
         
         results = {}
         results['sin_is_lstid']  = {'msg':'Automatic LSTID', 'classification': p0_sin_fit.get('is_lstid')}
-        results['mlw_is_lstid']  = {'msg':'MLW LSTID',       'classification': mlw.get('MLW_is_lstid')}
-        try:
-            agree = not np.logical_xor(results['sin_is_lstid']['classification'],results['mlw_is_lstid']['classification'])
-        except:
-            agree = None
-        results['agree']         = {'msg':'Agree',           'classification': agree}
+#        results['mlw_is_lstid']  = {'msg':'MLW LSTID',       'classification': mlw.get('MLW_is_lstid')}
+#        try:
+#            agree = not np.logical_xor(results['sin_is_lstid']['classification'],results['mlw_is_lstid']['classification'])
+#        except:
+#            agree = None
+#        results['agree']         = {'msg':'Agree',           'classification': agree}
        
         for inx,(key, result) in enumerate(results.items()):
             msg = result['msg']
             res = result['classification']
 
             fdct    = {}
-            fdct['x']           = 0.05 + inx*0.35
-            fdct['y']           = 0.05
+            fdct['x']           = 0.4 + inx*0.35
+            fdct['y']           = 0.1
             fdct['s']           = '{!s}: {!s}'.format(msg,res)
             fdct['fontdict']    = {'weight':'bold','size':'large'}
             fdct['color']       = result_color(res)
@@ -1150,13 +1150,13 @@ def plot_sin_fit_analysis(all_results,
 if __name__ == '__main__':
     output_dir  = 'output'
     cache_dir   = 'cache'
-    clear_cache = False
+    clear_cache = True
 
-    sDate   = datetime.datetime(2018,11,1)
-    eDate   = datetime.datetime(2019,4,30)
+#    sDate   = datetime.datetime(2018,11,1)
+#    eDate   = datetime.datetime(2019,4,30)
 
-#    sDate   = datetime.datetime(2018,11,9)
-#    eDate   = datetime.datetime(2018,11,9)
+    sDate   = datetime.datetime(2018,11,9)
+    eDate   = datetime.datetime(2018,11,9)
 
 #    sDate   = datetime.datetime(2018,11,5)
 #    eDate   = datetime.datetime(2018,11,5)
@@ -1220,10 +1220,10 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
-    plot_sin_fit_analysis(all_results,output_dir=output_dir)
+#    plot_sin_fit_analysis(all_results,output_dir=output_dir)
 
-    for compare_ds in ['MLW','NAF']:
-        plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
+#    for compare_ds in ['MLW','NAF']:
+#        plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
 
 
-import ipdb; ipdb.set_trace()
+#import ipdb; ipdb.set_trace()
