@@ -900,7 +900,7 @@ def plot_sin_fit_analysis(all_results,
     params.append('r2')
     params.append('T_hr_guess')
     params.append('selected')
-    params.append('is_lstid')
+#    params.append('is_lstid')
 
     df_lst = []
     df_inx = []
@@ -922,6 +922,12 @@ def plot_sin_fit_analysis(all_results,
 
     df          = pd.DataFrame(df_lst,index=df_inx)
     df_sel      = df[df.selected].copy() # Data frame with fits that have been selected as good.
+
+    sDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = sDate.strftime('%Y%m%d')
+    csv_fname   = '{!s}-{!s}_allSinFits.csv'.format(sDate_str,eDate_str)
+    csv_fpath   = os.path.join(output_dir,csv_fname)
+    df.to_csv(csv_fpath)
 
     # Plotting #############################
     nrows   = 7
@@ -991,7 +997,7 @@ def plot_sin_fit_analysis(all_results,
 
     prmds['r2'] = prmd = {}
     prmd['title']   = 'Ham Radio Fit $r^2$'
-    prmd['label']   = '$r^24'
+    prmd['label']   = '$r^2$'
     prmd['vmin']    = 0
     prmd['vmax']    = 1
 
@@ -1022,11 +1028,11 @@ def plot_sin_fit_analysis(all_results,
         ax.scatter(xx,yy,marker='o',c=color)
         ax.legend(loc='upper right',ncols=2)
 
-        # December 25, 2018
-        line_lw  = 8
-        line_color = 'black'
-        ax.axvline(datetime.datetime(2018,12,25),lw=line_lw,color=line_color,label='25 Dec 2018')
-        ax.axvline(datetime.datetime(2019,1,2),lw=line_lw,color=line_color,label='2 Jan 2019')
+#        # December 25, 2018
+#        line_lw  = 8
+#        line_color = 'black'
+#        ax.axvline(datetime.datetime(2018,12,25),lw=line_lw,color=line_color,label='25 Dec 2018')
+#        ax.axvline(datetime.datetime(2019,1,2),lw=line_lw,color=line_color,label='2 Jan 2019')
 
 
         trans           = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
