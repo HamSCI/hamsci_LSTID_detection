@@ -143,7 +143,7 @@ def load_df_mlw():
     df_mlw['MLW_is_lstid'] = np.logical_and.reduce(crits)
     return df_mlw,mlw_lstid_criteria
 
-df_mlw, mlw_lstid_criteria  = load_df_mlw()
+#df_mlw, mlw_lstid_criteria  = load_df_mlw()
 
 def fmt_xaxis(ax,xlim=None,label=True):
     ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
@@ -511,7 +511,11 @@ def run_edge_detect(
     return result
 
 def curve_combo_plot(result_dct,cb_pad=0.125,
-                     output_dir=os.path.join('output','daily_plots'),mlw_compare=True):
+                     output_dir=os.path.join('output','daily_plots'),
+                     auto_crit=None,
+                     compare_df=None,
+                     compare=None,
+                     agree_lstid=None):
                      
     """
     Make a curve combo stackplot that includes:
@@ -629,7 +633,7 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     txt = []
     txt.append('Sinusoid Fit')
     for key, val in p0_sin_fit.items():
-        if key == 'is_lstid' and not mlw_compare:
+        if key == 'is_lstid' and not compare:
             continue
 
         if key == 'r2':
@@ -640,54 +644,63 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
             txt.append('{!s}: {:0.1f}'.format(key,val))
     ax.text(0.30,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
 
-    if mlw_compare is True:
-#        if date in df_mlw.index:
-#            mlw = df_mlw.loc[date,:]
-#        else:
-#            mlw = {}
-#        txt = []
-#        txt.append('MLW Manual Fit')
-#        for key, val in mlw.items():
-#            txt.append('{!s}: {!s}'.format(key,val))
-#        txt.append('')
-#        txt.append('MLW LSTID Criteria:')
-#        for key, val in mlw_lstid_criteria.items():
-#            txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-#        ax.text(0.65,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
-
+    results = {}
+    if auto_crit == True:
         txt = []
         txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
         for key, val in lstid_criteria.items():
             txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-        ax.text(0.01,0.3,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
-
+        ax.text(0.01,0.3,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})    
+            
+        results['sin_is_lstid']  = {'msg':'Auto', 'classification': p0_sin_fit.get('is_lstid')}
+    
         fig.tight_layout()
 
-        def result_color(result):
-            if result == True:
-                color = 'green'
-            elif result == False:
-                color = 'red'
-            else:
-                color = 'black'
-            return color    
+    if compare_df is not None:
         
-        results = {}
-        results['sin_is_lstid']  = {'msg':'Automatic LSTID', 'classification': p0_sin_fit.get('is_lstid')}
-#        results['mlw_is_lstid']  = {'msg':'MLW LSTID',       'classification': mlw.get('MLW_is_lstid')}
-#        try:
-#            agree = not np.logical_xor(results['sin_is_lstid']['classification'],results['mlw_is_lstid']['classification'])
-#        except:
-#            agree = None
-#        results['agree']         = {'msg':'Agree',           'classification': agree}
-       
+        df_name            = compare_df['df_name']
+        df_compare         = compare_df['df']
+        df_lstid_criteria  = compare_df['df_lstid_criteria']
+        
+        if date in df_compare.index:
+            df_date = df_compare.loc[date,:]
+        else:
+            df_date = {}
+        txt = []
+        txt.append(f'{df_name} Manual Fit')
+        for key, val in df_date.items():
+            txt.append('{!s}: {!s}'.format(key,val))
+        txt.append('')
+        txt.append(f'{df_name} LSTID Criteria:')
+        for key, val in df_lstid_criteria.items():
+            txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
+        ax.text(0.65,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
+    
+        results[f'{df_name}_is_lstid']  = {'msg':f'{df_name}',       'classification': df_date.get(f'{df_name}_is_lstid')}
+        try:
+            agree = not np.logical_xor(results['sin_is_lstid']['classification'],results[f'{df_name}_is_lstid']['classification'])
+        except:
+            agree = None
+        results['agree']         = {'msg':'Agree',           'classification': agree}
+
+
+    def result_color(result):
+        if result == True:
+            color = 'green'
+        elif result == False:
+            color = 'red'
+        else:
+            color = 'black'
+        return color
+        
+    if agree_lstid == True:
         for inx,(key, result) in enumerate(results.items()):
             msg = result['msg']
             res = result['classification']
-
+    
             fdct    = {}
-            fdct['x']           = 0.4 + inx*0.35
-            fdct['y']           = 0.1
+            fdct['x']           = 0.43 
+            fdct['y']           = 0.2 - inx*0.05
             fdct['s']           = '{!s}: {!s}'.format(msg,res)
             fdct['fontdict']    = {'weight':'bold','size':'large'}
             fdct['color']       = result_color(res)
@@ -1148,9 +1161,15 @@ def plot_sin_fit_analysis(all_results,
     fig.savefig(png_fpath,bbox_inches='tight')
 
 if __name__ == '__main__':
-    output_dir  = 'output'
-    cache_dir   = 'cache'
-    clear_cache = True
+    output_dir          = 'output'
+    cache_dir           = 'cache'
+    clear_cache         = True
+    compare_lstid       = True
+    automatic_lstid     = True
+    agree_compare_lstid = False
+    df_name    = 'MLW' 
+#    df_name    = 'NAF'
+#    df_name    = 'DFS'
 
 #    sDate   = datetime.datetime(2018,11,1)
 #    eDate   = datetime.datetime(2019,4,30)
@@ -1176,6 +1195,16 @@ if __name__ == '__main__':
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
+    # Load chosen data to compare #################################################
+    if compare_lstid == True:
+        if df_name == 'MLW':
+            df_mlw, mlw_lstid_criteria  = load_df_mlw()
+            df_dict    = {'df_name': df_name, 'df': df_mlw, 'df_lstid_criteria':mlw_lstid_criteria}
+#        if df_name == 'NAF':
+#        if df_name == 'DFS':
+    else:
+        df_dict = None
+    
     # Edge Detection ###############################################################
     sDate_str   = sDate.strftime('%Y%m%d')
     eDate_str   = sDate.strftime('%Y%m%d')
@@ -1211,7 +1240,8 @@ if __name__ == '__main__':
             all_results[date] = result
             if result is None: # Missing Data Case
                 continue
-            curve_combo_plot(result)
+            
+            curve_combo_plot(result,compare_df=df_dict,auto_crit=automatic_lstid,compare=compare_lstid,agree_lstid=agree_compare_lstid)
 
         with open(pkl_fpath,'wb') as fl:
             print('PICKLING: {!s}'.format(pkl_fpath))
