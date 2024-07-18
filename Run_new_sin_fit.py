@@ -145,6 +145,45 @@ def load_df_mlw():
 
 #df_mlw, mlw_lstid_criteria  = load_df_mlw()
 
+def load_df_sql(sDate=datetime.datetime(2018,11,1), 
+                eDate=datetime.datetime(2019,4,30),
+                data_name='NAF'):
+    
+    import lstidFitDb
+    ldb  = lstidFitDb.LSTIDFitDb()
+    
+    dates = [sDate]
+    while dates[-1] < eDate:
+        dates.append(dates[-1]+datetime.timedelta(days=1))
+    
+    lst = []
+    inx = []
+    for date in dates:
+        p0, in_DB = ldb.get_fit(date)
+        if in_DB:
+            lst.append(p0)
+            inx.append(date)
+    
+    df = pd.DataFrame(lst,index=inx)
+    df['dur_hr'] = (df['eTime'] - df['sTime']).apply(lambda x: x.total_seconds()/3600.)
+
+    # Explicitly classify results as LSTID or not.
+    crits   = []
+    # TIDs must exist for more than 0 hours
+    tf_tid_hrs          = df['dur_hr'].astype(float).fillna(0) > 0
+    crits.append(tf_tid_hrs)
+
+    # Additional criteria beyond duration.
+    sql_lstid_criteria  = {}
+    sql_lstid_criteria['T_hr'] = lstid_T_hr_lim    
+
+    for key, crit in sql_lstid_criteria.items():
+        result  = np.logical_and(df[key] >= crit[0], df[key] < crit[1])
+        crits.append(result)
+
+    df[f'{data_name}_is_lstid'] = np.logical_and.reduce(crits)
+    return df,sql_lstid_criteria
+
 def fmt_xaxis(ax,xlim=None,label=True):
     ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
     ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
@@ -1166,16 +1205,16 @@ if __name__ == '__main__':
     clear_cache         = True
     compare_lstid       = True
     automatic_lstid     = True
-    agree_compare_lstid = False
-    df_name    = 'MLW' 
-#    df_name    = 'NAF'
+    agree_compare_lstid = True
+#    df_name    = 'MLW' 
+    df_name    = 'NAF'
 #    df_name    = 'DFS'
 
-#    sDate   = datetime.datetime(2018,11,1)
-#    eDate   = datetime.datetime(2019,4,30)
+    sDate   = datetime.datetime(2018,11,1)
+    eDate   = datetime.datetime(2019,4,30)
 
-    sDate   = datetime.datetime(2018,11,9)
-    eDate   = datetime.datetime(2018,11,9)
+#    sDate   = datetime.datetime(2018,11,9)
+#    eDate   = datetime.datetime(2018,11,9)
 
 #    sDate   = datetime.datetime(2018,11,5)
 #    eDate   = datetime.datetime(2018,11,5)
@@ -1200,7 +1239,9 @@ if __name__ == '__main__':
         if df_name == 'MLW':
             df_mlw, mlw_lstid_criteria  = load_df_mlw()
             df_dict    = {'df_name': df_name, 'df': df_mlw, 'df_lstid_criteria':mlw_lstid_criteria}
-#        if df_name == 'NAF':
+        if df_name == 'NAF':
+            df_naf, naf_lstid_criteria  = load_df_sql()
+            df_dict    = {'df_name': df_name, 'df': df_naf, 'df_lstid_criteria':naf_lstid_criteria}
 #        if df_name == 'DFS':
     else:
         df_dict = None
