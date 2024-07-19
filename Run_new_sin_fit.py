@@ -1202,7 +1202,7 @@ def plot_sin_fit_analysis(all_results,
 if __name__ == '__main__':
     output_dir          = 'output'
     cache_dir           = 'cache'
-    clear_cache         = True
+    clear_cache         = False
     compare_lstid       = True
     automatic_lstid     = True
     agree_compare_lstid = True
@@ -1291,10 +1291,8 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
-#    plot_sin_fit_analysis(all_results,output_dir=output_dir)
-
-#    for compare_ds in ['MLW','NAF']:
-#        plot_season_analysis(all_results,output_dir=output_dir,compare_ds=compare_ds)
+    plot_sin_fit_analysis(all_results,output_dir=output_dir)
+    plot_season_analysis(all_results,output_dir=output_dir,compare_ds=df_name)
 
 
 #import ipdb; ipdb.set_trace()
