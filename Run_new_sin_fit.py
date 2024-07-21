@@ -21,6 +21,8 @@ import string
 letters = string.ascii_lowercase
 
 from scipy import signal
+from scipy.signal import stft
+from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
 from data_loading import create_xarr, mad, create_label_df
@@ -238,6 +240,24 @@ def sinusoid(tt_sec,T_hr,amplitude_km,phase_hr,offset_km,slope_kmph):
     result          = np.abs(amplitude_km) * np.sin( (2*np.pi*tt_sec*freq ) + phase_rad ) + (slope_kmph/3600.)*tt_sec + offset_km
     return result
 
+def bandpass_filter(
+    data,
+    lowcut=0.00005556, 
+    highcut=0.0001852, 
+    fs=0.0166666666666667, 
+    order=4):
+    """
+    1.5 hour period = 0.0001852 Hz
+    5 hour period   = 0.00005556 Hz
+    Sampling Freq   = 0.0166666666666667 (our data is in 1 min resolution)
+    """
+    nyquist = 0.5 * fs
+    low = lowcut / nyquist
+    high = highcut / nyquist
+    b, a = butter(order, [low, high], btype='band')
+    filtered = filtfilt(b, a, data)
+    return filtered
+
 def run_edge_detect(
     date,
     x_trim=.08333,
@@ -424,6 +444,18 @@ def run_edge_detect(
             # Detrend Data Using 2nd Degree Polynomial
             data_detrend         = data - poly_fit
 
+            # Apply bandpass filter
+            lowcut  = 1/(lstid_T_hr_lim[1]*3600) # higher period limit 
+            highcut = 1/(lstid_T_hr_lim[0]*3600) # lower period limit
+            fs      = 1/60
+            order   = 4
+            
+            filtered_signal = bandpass_filter(data=data_detrend.values, lowcut=lowcut, highcut=highcut, fs=fs, order=order)
+
+            filtered_series = pd.Series(data=filtered_signal, index=data_detrend.index)
+            data_detrend    = filtered_series
+            
+#            data_detrend.to_csv('detrend_for_testing.csv')
 #            # Get MLW's initial guess
 #            if date in df_mlw.index:
 #                mlw = df_mlw.loc[date,:]
@@ -1213,8 +1245,8 @@ if __name__ == '__main__':
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
 
-#    sDate   = datetime.datetime(2018,11,9)
-#    eDate   = datetime.datetime(2018,11,9)
+#    sDate   = datetime.datetime(2018,12,15)
+#    eDate   = datetime.datetime(2018,12,15)
 
 #    sDate   = datetime.datetime(2018,11,5)
 #    eDate   = datetime.datetime(2018,11,5)
