@@ -247,6 +247,7 @@ def bandpass_filter(
     fs=0.0166666666666667, 
     order=4):
     """
+    Defaults:
     1.5 hour period = 0.0001852 Hz
     5 hour period   = 0.00005556 Hz
     Sampling Freq   = 0.0166666666666667 (our data is in 1 min resolution)
@@ -268,10 +269,11 @@ def run_edge_detect(
     i_max=30,
     thresh=None,
     plot_filter_path=None,
-    cache_dir='cache'):
+    cache_dir='cache',
+    bandpass=True):
     """
     """
-
+    
     date_str    = date.strftime('%Y%m%d')
     pkl_fname   = f'{date_str}_edgeDetect.pkl'
     pkl_fpath   = os.path.join(cache_dir,pkl_fname)
@@ -450,11 +452,11 @@ def run_edge_detect(
             fs      = 1/60
             order   = 4
             
-            filtered_signal = bandpass_filter(data=data_detrend.values, lowcut=lowcut, highcut=highcut, fs=fs, order=order)
+            filtered_signal  = bandpass_filter(data=data_detrend.values, lowcut=lowcut, highcut=highcut, fs=fs, order=order)
+            filtered_detrend = pd.Series(data=filtered_signal, index=data_detrend.index)
 
-            filtered_series = pd.Series(data=filtered_signal, index=data_detrend.index)
-            data_detrend    = filtered_series
-            
+            if bandpass == True:
+                data_detrend = filtered_detrend
 #            data_detrend.to_csv('detrend_for_testing.csv')
 #            # Get MLW's initial guess
 #            if date in df_mlw.index:
@@ -464,7 +466,7 @@ def run_edge_detect(
 #            guess_T_hr = mlw.get('MLW_period_hr',3.)
 
             T_hr_guesses = np.arange(1,4.5,0.5)
-
+            
             all_sin_fits = []
             for T_hr_guess in T_hr_guesses:
                 # Curve Fit Sinusoid ################### 
@@ -526,7 +528,7 @@ def run_edge_detect(
         lstid_criteria = {}
         lstid_criteria['T_hr']          = lstid_T_hr_lim    
         lstid_criteria['amplitude_km']  = (20,2000)
-        lstid_criteria['r2']            = (0.15,1.1)
+        lstid_criteria['r2']            = (0.35,1.1)
         
         if p0_sin_fit != {}:
             crits   = []
@@ -792,7 +794,12 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
     plt.close()
-    return
+
+    res_agr                  = list(results['agree'].values())
+    p0_sin_fit['agree']      = res_agr[1]
+    result_dct['p0_sin_fit'] = p0_sin_fit
+    
+    return result_dct
 
 def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     """
@@ -812,7 +819,8 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     params.append('T_hr')
     params.append('amplitude_km')
     params.append('is_lstid')
-
+    params.append('agree')
+    
     df_lst = []
     df_inx = []
     for date,results in all_results.items():
@@ -835,6 +843,8 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     not_lstid = np.logical_not(df['is_lstid'])
     for param in params:
         if param == 'is_lstid':
+            continue
+        if param == 'agree':
             continue
         df.loc[not_lstid,param] = np.nan
 
@@ -920,7 +930,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
         p11         = scat_data[key_1].values.astype(float)
         ax1         = fig.add_subplot(gs[rinx,2])
         ax1.scatter(p00,p11)
-
+        
         # Curve Fit Line Polynomial #########  
         coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(p00, p11, 1, full = True)
         ss_res_line_fit = ss_res[0]
@@ -928,7 +938,14 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 
         ss_tot_line_fit      = np.sum( (p1 - np.mean(p1))**2 )
         r_sqrd_line_fit      = 1 - (ss_res_line_fit / ss_tot_line_fit)
+
+        # Calculate percentage of agreed upon days
+        true_count  = df['agree'].sum()
+        total_count = len(df['agree'])
+        true_per    = (true_count / total_count) * 100
+
         txt = []
+        txt.append('Agree = {!s}%'.format(true_per))
         txt.append('$N$ Shown = {!s}'.format(len(p00)))
         txt.append('$N$ Dropped = {!s}'.format(len(dfc) - len(p00)))
         txt.append('$r^2$ = {:0.2f}'.format(r_sqrd_line_fit))
@@ -1234,7 +1251,8 @@ def plot_sin_fit_analysis(all_results,
 if __name__ == '__main__':
     output_dir          = 'output'
     cache_dir           = 'cache'
-    clear_cache         = False
+    clear_cache         = True
+    bandpass            = False
     compare_lstid       = True
     automatic_lstid     = True
     agree_compare_lstid = True
@@ -1309,13 +1327,13 @@ if __name__ == '__main__':
                 plot_filter_path    = os.path.join(output_dir,'filter.png')
             else:
                 plot_filter_path    = None
-            result              = run_edge_detect(date,plot_filter_path=plot_filter_path,cache_dir=cache_dir)
-            all_results[date] = result
+            result              = run_edge_detect(date,plot_filter_path=plot_filter_path,cache_dir=cache_dir,bandpass=bandpass)
             if result is None: # Missing Data Case
                 continue
             
-            curve_combo_plot(result,compare_df=df_dict,auto_crit=automatic_lstid,compare=compare_lstid,agree_lstid=agree_compare_lstid)
-
+            result = curve_combo_plot(result,compare_df=df_dict,auto_crit=automatic_lstid,compare=compare_lstid,agree_lstid=agree_compare_lstid)
+            all_results[date] = result
+            
         with open(pkl_fpath,'wb') as fl:
             print('PICKLING: {!s}'.format(pkl_fpath))
             pickle.dump(all_results,fl)
