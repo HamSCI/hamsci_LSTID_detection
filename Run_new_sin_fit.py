@@ -841,12 +841,12 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 
     # Set non-LSTID parameters to NaN
     not_lstid = np.logical_not(df['is_lstid'])
-    for param in params:
-        if param == 'is_lstid':
-            continue
-        if param == 'agree':
-            continue
-        df.loc[not_lstid,param] = np.nan
+#    for param in params:
+#        if param == 'is_lstid':
+#            continue
+#        if param == 'agree':
+#            continue
+#        df.loc[not_lstid,param] = np.nan
 
     csv_fname   = '{!s}-{!s}_sinFit.csv'.format(sDate_str,eDate_str)
     csv_fpath   = os.path.join(output_dir,csv_fname)
@@ -1087,7 +1087,7 @@ def plot_sin_fit_analysis(all_results,
     prmds['amplitude_km'] = prmd = {}
     prmd['title']   = 'Ham Radio TID Amplitude'
     prmd['label']   = 'Amplitude [km]'
-    prmd['vmin']    = 0
+    prmd['vmin']    = 10
     prmd['vmax']    = 60
 
     prmds['T_hr'] = prmd = {}
@@ -1252,7 +1252,7 @@ if __name__ == '__main__':
     output_dir          = 'output'
     cache_dir           = 'cache'
     clear_cache         = True
-    bandpass            = False
+    bandpass            = True
     compare_lstid       = True
     automatic_lstid     = True
     agree_compare_lstid = True
