@@ -1304,6 +1304,7 @@ if __name__ == '__main__':
     if raw_data_loader == True:
         if clear_cache and os.path.exists('data_files'):
             shutil.rmtree('data_files')
+
         for dinx,date in enumerate(dates):
             processor = RawSpotProcessor(
                 start_date=date,

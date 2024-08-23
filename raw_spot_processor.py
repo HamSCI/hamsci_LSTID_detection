@@ -23,7 +23,7 @@ class RawSpotProcessor:
     }
 
 #    DATASETS = ['PSK', 'RBN', 'WSPR']
-    DATASETS = ['RBN', 'WSPR']
+    DATASETS = ['RBN']
 
     def __init__(self, start_date, end_date, input_dir, output_dir, 
                  region=None, 
@@ -142,7 +142,8 @@ class RawSpotProcessor:
 
         for file_path in file_paths:
             try:
-                print('Loading csv: ' + file_path)
+                tic = datetime.datetime.now()
+                print('Loading csv: ' + file_path,end=' ')
                 df = pd.read_csv(
                     file_path,
                     header=None,
@@ -151,6 +152,8 @@ class RawSpotProcessor:
                     usecols=[0, 11, 22, 23, 24]
                 )
                 dfs.append(df)
+                toc = datetime.datetime.now()
+                print('(Load time: {!s})'.format(toc-tic))
                 logging.info(f"Loaded file: {file_path}")
             except Exception as e:
                 logging.error(f"Error loading file {file_path}: {e}")
@@ -177,7 +180,7 @@ class RawSpotProcessor:
             (self.df['freq'] >= self.config['freq_low']) &
             (self.df['freq'] <= self.config['freq_high']) &
             (self.df['dist_km'] <= self.config['dist_km'])
-        ]
+        ].copy()
 
     def compute_data_dask(self):
         """
@@ -201,7 +204,7 @@ class RawSpotProcessor:
         Generates a 2D histogram of time versus distance.
         """
         # Convert datetime to second
-        self.data['time_numeric'] = self.data.index.astype(np.int64) // 10**9
+        self.data.loc[:,'time_numeric'] = self.data.index.astype(np.int64) // 10**9
         
         # Define bins for histogram
         distance_bins = np.arange(0, self.data['dist_km'].max(), 10)
