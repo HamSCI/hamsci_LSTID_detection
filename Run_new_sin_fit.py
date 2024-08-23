@@ -1151,7 +1151,7 @@ if __name__ == '__main__':
         
     # Edge Detection ###############################################################
     sDate_str   = sDate.strftime('%Y%m%d')
-    eDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = eDate.strftime('%Y%m%d')
     pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
     pkl_fpath   = os.path.join(cache_dir,pkl_fname)
     if os.path.exists(pkl_fpath):
