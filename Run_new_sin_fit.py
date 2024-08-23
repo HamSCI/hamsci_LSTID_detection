@@ -272,7 +272,6 @@ def run_edge_detect(
     occurence_n = 60,
     i_max=30,
     thresh=None,
-    plot_filter_path=None,
     cache_dir='cache',
     bandpass=True):
     """
@@ -1190,11 +1189,7 @@ if __name__ == '__main__':
         all_results = {}
         for dinx,date in enumerate(dates):
             print(date)
-            if dinx == 0:
-                plot_filter_path    = os.path.join(output_dir,'filter.png')
-            else:
-                plot_filter_path    = None
-            result              = run_edge_detect(date,plot_filter_path=plot_filter_path,cache_dir=cache_dir,bandpass=bandpass)
+            result              = run_edge_detect(date,cache_dir=cache_dir,bandpass=bandpass)
             if result is None: # Missing Data Case
                 continue
             
