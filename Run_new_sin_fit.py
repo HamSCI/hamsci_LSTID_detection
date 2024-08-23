@@ -589,11 +589,7 @@ def run_edge_detect(
 
 def curve_combo_plot(result_dct,cb_pad=0.125,
                      output_dir=os.path.join('output','daily_plots'),
-                     auto_crit=None,
-                     compare_df=None,
-                     compare=None,
-                     agree_lstid=None):
-                     
+                     auto_crit=None):
     """
     Make a curve combo stackplot that includes:
         1. Heatmap of Ham Radio Spots
@@ -710,9 +706,6 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     txt = []
     txt.append('Sinusoid Fit')
     for key, val in p0_sin_fit.items():
-        if key == 'is_lstid' and not compare:
-            continue
-
         if key == 'r2':
             txt.append('{!s}: {:0.2f}'.format(key,val))
         elif key == 'is_lstid':
@@ -730,60 +723,8 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
         ax.text(0.01,0.3,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})    
             
         results['sin_is_lstid']  = {'msg':'Auto', 'classification': p0_sin_fit.get('is_lstid')}
-    
-        fig.tight_layout()
 
-    if compare_df is not None:
-        
-        df_name            = compare_df['df_name']
-        df_compare         = compare_df['df']
-        df_lstid_criteria  = compare_df['df_lstid_criteria']
-        
-        if date in df_compare.index:
-            df_date = df_compare.loc[date,:]
-        else:
-            df_date = {}
-        txt = []
-        txt.append(f'{df_name} Manual Fit')
-        for key, val in df_date.items():
-            txt.append('{!s}: {!s}'.format(key,val))
-        txt.append('')
-        txt.append(f'{df_name} LSTID Criteria:')
-        for key, val in df_lstid_criteria.items():
-            txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-        ax.text(0.65,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
-    
-        results[f'{df_name}_is_lstid']  = {'msg':f'{df_name}',       'classification': df_date.get(f'{df_name}_is_lstid')}
-        try:
-            agree = not np.logical_xor(results['sin_is_lstid']['classification'],results[f'{df_name}_is_lstid']['classification'])
-        except:
-            agree = None
-        results['agree']         = {'msg':'Agree',           'classification': agree}
-
-
-    def result_color(result):
-        if result == True:
-            color = 'green'
-        elif result == False:
-            color = 'red'
-        else:
-            color = 'black'
-        return color
-        
-    if agree_lstid == True:
-        for inx,(key, result) in enumerate(results.items()):
-            msg = result['msg']
-            res = result['classification']
-    
-            fdct    = {}
-            fdct['x']           = 0.43 
-            fdct['y']           = 0.2 - inx*0.05
-            fdct['s']           = '{!s}: {!s}'.format(msg,res)
-            fdct['fontdict']    = {'weight':'bold','size':'large'}
-            fdct['color']       = result_color(res)
-            fdct['transform']   = ax.transAxes
-            ax.text(**fdct)
-
+    fig.tight_layout()
     # Account for colorbars and line up all axes.
     for ax_inx, ax in enumerate(axs):
         if ax_inx == 0:
@@ -799,13 +740,10 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     fig.savefig(png_fpath,bbox_inches='tight')
     plt.close()
 
-    res_agr                  = list(results['agree'].values())
-    p0_sin_fit['agree']      = res_agr[1]
     result_dct['p0_sin_fit'] = p0_sin_fit
-    
     return result_dct
 
-def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
+def plot_season_analysis(all_results,output_dir='output'):
     """
     Plot the LSTID analysis for the entire season.
     """
@@ -815,7 +753,7 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
 
     sDate_str   = sDate.strftime('%Y%m%d')
     eDate_str   = sDate.strftime('%Y%m%d')
-    png_fname   = '{!s}-{!s}_{!s}_seasonAnalysis.png'.format(sDate_str,eDate_str,compare_ds)
+    png_fname   = '{!s}-{!s}_seasonAnalysis.png'.format(sDate_str,eDate_str)
     png_fpath   = os.path.join(output_dir,png_fname)
 
     # Create parameter dataframe.
@@ -844,133 +782,9 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     df.loc[:,'amplitude_km']    = np.abs(df['amplitude_km'])
 
     # Set non-LSTID parameters to NaN
-    not_lstid = np.logical_not(df['is_lstid'])
-#    for param in params:
-#        if param == 'is_lstid':
-#            continue
-#        if param == 'agree':
-#            continue
-#        df.loc[not_lstid,param] = np.nan
-
     csv_fname   = '{!s}-{!s}_sinFit.csv'.format(sDate_str,eDate_str)
     csv_fpath   = os.path.join(output_dir,csv_fname)
     df.to_csv(csv_fpath)
-
-    # # Plotting #############################
-    # nCols   = 3
-    # nRows   = 3
-
-    # axInx   = 0
-    # figsize = (25,nRows*5)
-
-    # gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
-    # fig     = plt.figure(figsize=figsize)
-
-    # pct_overlap = None  # This needs to be computed explicitly for each comparison. Default to None so code does not break if it not computed.
-
-    # if compare_ds == 'MLW':
-    #     # Load in Mary Lou West's Manual LSTID Analysis
-
-    #     # Set params of not LSTID days to NaNs.
-    #     not_lstid       = np.logical_not(df_mlw['MLW_is_lstid'])
-    #     df_mlw_lstid    = df_mlw.copy()
-    #     params  = df_mlw_lstid.keys()
-    #     for param in params:
-    #         if param in ['MLW_comment','MLW_is_lstid']:
-    #             continue
-    #         df_mlw_lstid.loc[not_lstid,param] = np.nan
-
-    #     # Combine FFT and MLW analysis dataframes.
-    #     dfc             = pd.concat([df,df_mlw_lstid],axis=1)
-    #     dfc['agree']    = np.logical_not(np.logical_xor(dfc['is_lstid'].astype(bool),dfc['MLW_is_lstid'].astype(bool)))
-    #     pct_overlap     = 100. * (np.count_nonzero(dfc['agree']) / len(dfc))
-
-    #     # Compare parameters - List of (df, lstid_mlw) keys to compare.
-    #     cmps = []
-    #     cmps.append( ('T_hr',          'MLW_period_hr') )
-    #     cmps.append( ('amplitude_km',  'MLW_range_range') )
-    #     cmps.append( ('amplitude_km',  'MLW_tid_hours') )
-    # elif compare_ds == 'NAF':
-    #     import lstidFitDb
-    #     ldb     = lstidFitDb.LSTIDFitDb()
-    #     df_naf  = ldb.get_data_frame()
-
-    #     old_keys    = list(df_naf.keys())
-    #     new_keys    = {x:'NAF_'+x for x in old_keys}
-    #     df_naf      = df_naf.rename(columns=new_keys)
-
-    #     # Combine FFT and MLW analysis dataframes.
-    #     dfc = pd.concat([df,df_naf],axis=1)
-
-    #     # Compare parameters - List of (df, lstid_mlw) keys to compare.
-    #     cmps = []
-    #     cmps.append( ('T_hr',          'NAF_T_hr') )
-    #     cmps.append( ('amplitude_km',  'NAF_amplitude_km') )
-    #     cmps.append( ('amplitude_km',  'NAF_dur_hr') )
-
-    # for pinx,(key_0,key_1) in enumerate(cmps):
-    #     rinx    = pinx
-    #     ax0     = fig.add_subplot(gs[rinx,:2])
-
-    #     df_hist = dfc[[key_0,key_1]]
-    #     p0  = dfc[key_0]
-    #     p1  = dfc[key_1]
-    #     tf  = np.logical_and(np.isfinite(p0.values.astype(float)),np.isfinite(p1.values.astype(float)))
-
-    #     hndls   = []
-    #     hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='Sine Fit',alpha=0.5)
-    #     hndls.append(hndl)
-    #     ax0.set_ylabel(key_0)
-    #     ax0.set_xlim(sDate,eDate)
-
-    #     ax0r    = ax0.twinx()
-    #     hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label=compare_ds,alpha=0.5)
-    #     hndls.append(hndl)
-    #     ax0r.set_ylabel(key_1)
-    #     ax0r.legend(handles=hndls,loc='lower right')
-
-    #     scat_data   = dfc[[key_0,key_1]].dropna().sort_values(key_0)
-    #     p00         = scat_data[key_0].values.astype(float)
-    #     p11         = scat_data[key_1].values.astype(float)
-    #     ax1         = fig.add_subplot(gs[rinx,2])
-    #     ax1.scatter(p00,p11)
-        
-    #     # Curve Fit Line Polynomial #########  
-    #     coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(p00, p11, 1, full = True)
-    #     ss_res_line_fit = ss_res[0]
-    #     line_fit = poly.polyval(p00, coefs)
-
-    #     ss_tot_line_fit      = np.sum( (p1 - np.mean(p1))**2 )
-    #     r_sqrd_line_fit      = 1 - (ss_res_line_fit / ss_tot_line_fit)
-
-    #     # Calculate percentage of agreed upon days
-    #     true_count  = df['agree'].sum()
-    #     total_count = len(df['agree'])
-    #     true_per    = (true_count / total_count) * 100
-
-    #     txt = []
-    #     txt.append('Agree = {!s}%'.format(true_per))
-    #     txt.append('$N$ Shown = {!s}'.format(len(p00)))
-    #     txt.append('$N$ Dropped = {!s}'.format(len(dfc) - len(p00)))
-    #     txt.append('$r^2$ = {:0.2f}'.format(r_sqrd_line_fit))
-    #     ax1.plot(p00,line_fit,ls='--',label='\n'.join(txt))
-
-    #     ax1.legend(loc='lower right',fontsize='x-small')
-    #     ax1.set_xlabel(key_0)
-    #     ax1.set_ylabel(key_1)
-
-    # fig.tight_layout()
-
-    # txt = []
-    # txt.append('LSTID Automatic Sinusoid Fit Compared with {!s} Manual Fit'.format(compare_ds))
-    # if pct_overlap is not None:
-    #     txt.append('{:0.0f}% Overlap'.format(pct_overlap))
-    # fig.text(0.5,1.0,'\n'.join(txt),ha='center',fontdict={'weight':'bold','size':'x-large'})
-
-    # if not os.path.exists(output_dir):
-    #     os.mkdir(output_dir)
-    # print('   Saving: {!s}'.format(png_fpath))
-    # fig.savefig(png_fpath,bbox_inches='tight')
 
 def plot_sin_fit_analysis(all_results,
                           T_hr_vmin=0,T_hr_vmax=5,T_hr_cmap='rainbow',
@@ -1268,26 +1082,20 @@ if __name__ == '__main__':
     cache_dir                 = 'cache'
     clear_cache               = True
     bandpass                  = True
-    compare_lstid             = True
     automatic_lstid           = True
-    agree_compare_lstid       = True
-    raw_data_loader           = True
-    #    df_name              = 'MLW'
-    df_name                   = 'NAF'
-    #    df_name              = 'DFS'
+    raw_data_loader           = False
+#    compare_lstid             = True
+#    agree_compare_lstid       = True
+#    #    df_name              = 'MLW'
+#    df_name                   = 'NAF'
+#    #    df_name              = 'DFS'
+
+#    sDate   = datetime.datetime(2018,11,1)
+#    eDate   = datetime.datetime(2019,4,30)
 
     sDate   = datetime.datetime(2018,11,1)
-    eDate   = datetime.datetime(2019,4,30)
+    eDate   = datetime.datetime(2018,11,5)
 
-#    sDate   = datetime.datetime(2018,12,15)
-#    eDate   = datetime.datetime(2018,12,15)
-
-#    sDate   = datetime.datetime(2018,11,5)
-#    eDate   = datetime.datetime(2018,11,5)
-
-#    sDate   = datetime.datetime(2017,1,1)
-#    eDate   = datetime.datetime(2017,1,1)
-    
     # NO PARAMETERS BELOW THIS LINE ################################################
     if clear_cache and os.path.exists(cache_dir):
         shutil.rmtree(cache_dir)
@@ -1344,16 +1152,16 @@ if __name__ == '__main__':
 
         
     # Load chosen data to compare #################################################
-    if compare_lstid == True:
-        if df_name == 'MLW':
-            df_mlw, mlw_lstid_criteria  = load_df_mlw()
-            df_dict    = {'df_name': df_name, 'df': df_mlw, 'df_lstid_criteria':mlw_lstid_criteria}
-        if df_name == 'NAF':
-            df_naf, naf_lstid_criteria  = load_df_sql()
-            df_dict    = {'df_name': df_name, 'df': df_naf, 'df_lstid_criteria':naf_lstid_criteria}
-#        if df_name == 'DFS':
-    else:
-        df_dict = None
+#    if compare_lstid == True:
+#        if df_name == 'MLW':
+#            df_mlw, mlw_lstid_criteria  = load_df_mlw()
+#            df_dict    = {'df_name': df_name, 'df': df_mlw, 'df_lstid_criteria':mlw_lstid_criteria}
+#        if df_name == 'NAF':
+#            df_naf, naf_lstid_criteria  = load_df_sql()
+#            df_dict    = {'df_name': df_name, 'df': df_naf, 'df_lstid_criteria':naf_lstid_criteria}
+##        if df_name == 'DFS':
+#    else:
+#        df_dict = None
     
     # Edge Detection ###############################################################
     sDate_str   = sDate.strftime('%Y%m%d')
@@ -1390,18 +1198,16 @@ if __name__ == '__main__':
             if result is None: # Missing Data Case
                 continue
             
-            result = curve_combo_plot(result,compare_df=df_dict,auto_crit=automatic_lstid,compare=compare_lstid,agree_lstid=agree_compare_lstid)
+            result = curve_combo_plot(result,auto_crit=automatic_lstid)
             all_results[date] = result
             
         with open(pkl_fpath,'wb') as fl:
             print('PICKLING: {!s}'.format(pkl_fpath))
             pickle.dump(all_results,fl)
 
-    toc = datetime.datetime.now()
 
-    print('Processing and plotting time: {!s}'.format(toc-tic))
     plot_sin_fit_analysis(all_results,output_dir=output_dir)
-    plot_season_analysis(all_results,output_dir=output_dir,compare_ds=df_name)
+    plot_season_analysis(all_results,output_dir=output_dir)
 
-
-#import ipdb; ipdb.set_trace()
+    toc = datetime.datetime.now()
+    print('Processing and plotting time: {!s}'.format(toc-tic))
