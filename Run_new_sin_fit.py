@@ -273,7 +273,8 @@ def run_edge_detect(
     i_max=30,
     thresh=None,
     cache_dir='cache',
-    bandpass=True):
+    bandpass=True,
+    **kwArgs):
     """
     """
     
@@ -1073,29 +1074,46 @@ def runRawProcessing(rawProcDict):
     processor.run_analysis()
     return processor
 
+def runEdgeDetectAndPlot(edgeDetectDict):
+    """
+    Wrapper function for edge detection and plotting to use with
+    multiprocessing.
+    """
+    print('Edge Detection: {!s}'.format(edgeDetectDict['date']))
+
+    result  = run_edge_detect(**edgeDetectDict)
+    if result is None: # Missing Data Case
+       return 
+    
+    auto_crit = edgeDetectDict.get('auto_crit',False)
+    result = curve_combo_plot(result,auto_crit=auto_crit)
+    return result
+
 if __name__ == '__main__':
     raw_processing_input_dir  = 'raw_data'
     raw_processing_output_dir = parent_dir
-    raw_processing_multiproc    = True
+    multiproc                 = True
     output_dir                = 'output'
     cache_dir                 = 'cache'
     clear_cache               = True
     bandpass                  = True
     automatic_lstid           = True
-    raw_data_loader           = False
-#    compare_lstid             = True
-#    agree_compare_lstid       = True
-#    #    df_name              = 'MLW'
-#    df_name                   = 'NAF'
-#    #    df_name              = 'DFS'
-
-#    sDate   = datetime.datetime(2018,11,1)
-#    eDate   = datetime.datetime(2019,4,30)
+    raw_data_loader           = True
 
     sDate   = datetime.datetime(2018,11,1)
-    eDate   = datetime.datetime(2018,11,5)
+    eDate   = datetime.datetime(2019,4,30)
+
+#    sDate   = datetime.datetime(2018,11,1)
+#    eDate   = datetime.datetime(2018,11,5)
 
     # NO PARAMETERS BELOW THIS LINE ################################################
+
+    # Determine number of cores for multiprocessing.
+    # Leave a couple cores open if >= 4 cores available.
+    nprocs  = multiprocessing.cpu_count()
+    if nprocs >= 4:
+        nprocs = nprocs - 2
+
     if clear_cache and os.path.exists(cache_dir):
         shutil.rmtree(cache_dir)
 
@@ -1139,13 +1157,10 @@ if __name__ == '__main__':
             )
             rawProcDicts.append(tmp)
 
-        if not raw_processing_multiproc:
+        if not multiproc:
             for rawProcDict in rawProcDicts:
                 runRawProcessing(rawProcDict)
         else:
-            nprocs  = multiprocessing.cpu_count()
-            if nprocs >= 4:
-                nprocs = nprocs - 2
             with multiprocessing.Pool(nprocs) as pool:
                 pool.map(runRawProcessing,rawProcDicts)
         
@@ -1171,16 +1186,31 @@ if __name__ == '__main__':
             joblib.dump(full_xarr, data_out_path)
 
         date_iter = DateIter(data_out_path) #, label_df=label_out_path)
-        ########################################
+
+        # Edge Detection, Curve Fitting, and Plotting ##########
+        edgeDetectDicts = []
+        for dinx,date in enumerate(dates):
+            tmp = {}
+            tmp['date']         = date
+            tmp['cache_dir']    = cache_dir
+            tmp['bandpass']     = bandpass
+            tmp['auto_crit']    = automatic_lstid
+            edgeDetectDicts.append(tmp)
+
+        if not multiproc:
+            results = []
+            for edgeDetectDict in edgeDetectDicts:
+                result = runEdgeDetectAndPlot(edgeDetectDict)
+                results.append(result)
+        else:
+            with multiprocessing.Pool(nprocs) as pool:
+                results = pool.map(runEdgeDetectAndPlot,edgeDetectDicts)
 
         all_results = {}
-        for dinx,date in enumerate(dates):
-            print(date)
-            result              = run_edge_detect(date,cache_dir=cache_dir,bandpass=bandpass)
-            if result is None: # Missing Data Case
+        for date,result in zip(dates,results):
+            if result is None: # No data case
                 continue
-            
-            result = curve_combo_plot(result,auto_crit=automatic_lstid)
+            print(date)
             all_results[date] = result
             
         with open(pkl_fpath,'wb') as fl:
