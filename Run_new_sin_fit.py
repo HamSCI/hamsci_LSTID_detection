@@ -16,6 +16,7 @@ import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 from operator import itemgetter
+import multiprocessing
 
 import string
 letters = string.ascii_lowercase
@@ -1251,18 +1252,29 @@ def plot_sin_fit_analysis(all_results,
     print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
 
+def runRawProcessing(rawProcDict):
+    """
+    Wrapper function to use RawSpotProcessor() with multiprocessing.
+    """
+    processor = RawSpotProcessor(**rawProcDict)
+    processor.run_analysis()
+    return processor
+
 if __name__ == '__main__':
-    output_dir          = 'output'
-    cache_dir           = 'cache'
-    clear_cache         = True
-    bandpass            = True
-    compare_lstid       = True
-    automatic_lstid     = True
-    agree_compare_lstid = True
-    raw_data_loader     = True
-#    df_name    = 'MLW' 
-    df_name    = 'NAF'
-#    df_name    = 'DFS'
+    raw_processing_input_dir  = 'raw_data'
+    raw_processing_output_dir = parent_dir
+    raw_processing_multiproc    = True
+    output_dir                = 'output'
+    cache_dir                 = 'cache'
+    clear_cache               = True
+    bandpass                  = True
+    compare_lstid             = True
+    automatic_lstid           = True
+    agree_compare_lstid       = True
+    raw_data_loader           = True
+    #    df_name              = 'MLW'
+    df_name                   = 'NAF'
+    #    df_name              = 'DFS'
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
@@ -1285,12 +1297,10 @@ if __name__ == '__main__':
 
     if clear_cache and os.path.exists('processed_data'):
         shutil.rmtree('processed_data')
+    if not os.path.exists('processed_data'):
+        os.mkdir('processed_data')
 
     # Load Raw CSV data and create 2d hist CSV files
-
-    if not os.path.exists('data_files'):
-        os.mkdir('data_files')
-
     tic = datetime.datetime.now()
     dates   = [sDate]
     while dates[-1] < eDate:
@@ -1298,19 +1308,21 @@ if __name__ == '__main__':
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
-    if not os.path.exists('processed_data'):
-        os.mkdir('processed_data')
 
     if raw_data_loader == True:
-        if clear_cache and os.path.exists('data_files'):
-            shutil.rmtree('data_files')
+        if clear_cache and os.path.exists(raw_processing_output_dir):
+            shutil.rmtree(raw_processing_output_dir)
 
+        if not os.path.exists(raw_processing_output_dir):
+            os.mkdir(raw_processing_output_dir)
+
+        rawProcDicts    = []
         for dinx,date in enumerate(dates):
-            processor = RawSpotProcessor(
+            tmp = dict(
                 start_date=date,
                 end_date=date,
-                input_dir='raw_data',
-                output_dir='data_files',
+                input_dir=raw_processing_input_dir,
+                output_dir=raw_processing_output_dir,
                 region='NA', 
                 freq_str='14 MHz',
                 csv_gen=True,
@@ -1318,7 +1330,18 @@ if __name__ == '__main__':
                 geo_gen=False,
                 dask=False
             )
-            processor.run_analysis()
+            rawProcDicts.append(tmp)
+
+        if not raw_processing_multiproc:
+            for rawProcDict in rawProcDicts:
+                runRawProcessing(rawProcDict)
+        else:
+            nprocs  = multiprocessing.cpu_count()
+            if nprocs >= 4:
+                nprocs = nprocs - 2
+            with multiprocessing.Pool(nprocs) as pool:
+                pool.map(runRawProcessing,rawProcDicts)
+
         
     # Load chosen data to compare #################################################
     if compare_lstid == True:
@@ -1377,7 +1400,7 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
-#    plot_sin_fit_analysis(all_results,output_dir=output_dir)
+    plot_sin_fit_analysis(all_results,output_dir=output_dir)
     plot_season_analysis(all_results,output_dir=output_dir,compare_ds=df_name)
 
 
