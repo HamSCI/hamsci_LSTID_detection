@@ -20,6 +20,9 @@ from operator import itemgetter
 import string
 letters = string.ascii_lowercase
 
+from raw_spot_processor import RawSpotProcessor
+from ham_spot_plot import HamSpotPlot 
+
 from scipy import signal
 from scipy.signal import stft
 from scipy.signal import butter, filtfilt
@@ -248,9 +251,9 @@ def bandpass_filter(
     order=4):
     """
     Defaults:
-    1.5 hour period = 0.0001852 Hz
+    1 hour period = 0.000277777778 Hz
     5 hour period   = 0.00005556 Hz
-    Sampling Freq   = 0.0166666666666667 (our data is in 1 min resolution)
+    Sampling Freq   = 0.0166666666666667 Hz (our data is in 1 min resolution)
     """
     nyquist = 0.5 * fs
     low = lowcut / nyquist
@@ -852,121 +855,121 @@ def plot_season_analysis(all_results,output_dir='output',compare_ds = 'NAF'):
     csv_fpath   = os.path.join(output_dir,csv_fname)
     df.to_csv(csv_fpath)
 
-    # Plotting #############################
-    nCols   = 3
-    nRows   = 3
+    # # Plotting #############################
+    # nCols   = 3
+    # nRows   = 3
 
-    axInx   = 0
-    figsize = (25,nRows*5)
+    # axInx   = 0
+    # figsize = (25,nRows*5)
 
-    gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
-    fig     = plt.figure(figsize=figsize)
+    # gs      = mpl.gridspec.GridSpec(nrows=nRows,ncols=nCols)
+    # fig     = plt.figure(figsize=figsize)
 
-    pct_overlap = None  # This needs to be computed explicitly for each comparison. Default to None so code does not break if it not computed.
+    # pct_overlap = None  # This needs to be computed explicitly for each comparison. Default to None so code does not break if it not computed.
 
-    if compare_ds == 'MLW':
-        # Load in Mary Lou West's Manual LSTID Analysis
+    # if compare_ds == 'MLW':
+    #     # Load in Mary Lou West's Manual LSTID Analysis
 
-        # Set params of not LSTID days to NaNs.
-        not_lstid       = np.logical_not(df_mlw['MLW_is_lstid'])
-        df_mlw_lstid    = df_mlw.copy()
-        params  = df_mlw_lstid.keys()
-        for param in params:
-            if param in ['MLW_comment','MLW_is_lstid']:
-                continue
-            df_mlw_lstid.loc[not_lstid,param] = np.nan
+    #     # Set params of not LSTID days to NaNs.
+    #     not_lstid       = np.logical_not(df_mlw['MLW_is_lstid'])
+    #     df_mlw_lstid    = df_mlw.copy()
+    #     params  = df_mlw_lstid.keys()
+    #     for param in params:
+    #         if param in ['MLW_comment','MLW_is_lstid']:
+    #             continue
+    #         df_mlw_lstid.loc[not_lstid,param] = np.nan
 
-        # Combine FFT and MLW analysis dataframes.
-        dfc             = pd.concat([df,df_mlw_lstid],axis=1)
-        dfc['agree']    = np.logical_not(np.logical_xor(dfc['is_lstid'].astype(bool),dfc['MLW_is_lstid'].astype(bool)))
-        pct_overlap     = 100. * (np.count_nonzero(dfc['agree']) / len(dfc))
+    #     # Combine FFT and MLW analysis dataframes.
+    #     dfc             = pd.concat([df,df_mlw_lstid],axis=1)
+    #     dfc['agree']    = np.logical_not(np.logical_xor(dfc['is_lstid'].astype(bool),dfc['MLW_is_lstid'].astype(bool)))
+    #     pct_overlap     = 100. * (np.count_nonzero(dfc['agree']) / len(dfc))
 
-        # Compare parameters - List of (df, lstid_mlw) keys to compare.
-        cmps = []
-        cmps.append( ('T_hr',          'MLW_period_hr') )
-        cmps.append( ('amplitude_km',  'MLW_range_range') )
-        cmps.append( ('amplitude_km',  'MLW_tid_hours') )
-    elif compare_ds == 'NAF':
-        import lstidFitDb
-        ldb     = lstidFitDb.LSTIDFitDb()
-        df_naf  = ldb.get_data_frame()
+    #     # Compare parameters - List of (df, lstid_mlw) keys to compare.
+    #     cmps = []
+    #     cmps.append( ('T_hr',          'MLW_period_hr') )
+    #     cmps.append( ('amplitude_km',  'MLW_range_range') )
+    #     cmps.append( ('amplitude_km',  'MLW_tid_hours') )
+    # elif compare_ds == 'NAF':
+    #     import lstidFitDb
+    #     ldb     = lstidFitDb.LSTIDFitDb()
+    #     df_naf  = ldb.get_data_frame()
 
-        old_keys    = list(df_naf.keys())
-        new_keys    = {x:'NAF_'+x for x in old_keys}
-        df_naf      = df_naf.rename(columns=new_keys)
+    #     old_keys    = list(df_naf.keys())
+    #     new_keys    = {x:'NAF_'+x for x in old_keys}
+    #     df_naf      = df_naf.rename(columns=new_keys)
 
-        # Combine FFT and MLW analysis dataframes.
-        dfc = pd.concat([df,df_naf],axis=1)
+    #     # Combine FFT and MLW analysis dataframes.
+    #     dfc = pd.concat([df,df_naf],axis=1)
 
-        # Compare parameters - List of (df, lstid_mlw) keys to compare.
-        cmps = []
-        cmps.append( ('T_hr',          'NAF_T_hr') )
-        cmps.append( ('amplitude_km',  'NAF_amplitude_km') )
-        cmps.append( ('amplitude_km',  'NAF_dur_hr') )
+    #     # Compare parameters - List of (df, lstid_mlw) keys to compare.
+    #     cmps = []
+    #     cmps.append( ('T_hr',          'NAF_T_hr') )
+    #     cmps.append( ('amplitude_km',  'NAF_amplitude_km') )
+    #     cmps.append( ('amplitude_km',  'NAF_dur_hr') )
 
-    for pinx,(key_0,key_1) in enumerate(cmps):
-        rinx    = pinx
-        ax0     = fig.add_subplot(gs[rinx,:2])
+    # for pinx,(key_0,key_1) in enumerate(cmps):
+    #     rinx    = pinx
+    #     ax0     = fig.add_subplot(gs[rinx,:2])
 
-        df_hist = dfc[[key_0,key_1]]
-        p0  = dfc[key_0]
-        p1  = dfc[key_1]
-        tf  = np.logical_and(np.isfinite(p0.values.astype(float)),np.isfinite(p1.values.astype(float)))
+    #     df_hist = dfc[[key_0,key_1]]
+    #     p0  = dfc[key_0]
+    #     p1  = dfc[key_1]
+    #     tf  = np.logical_and(np.isfinite(p0.values.astype(float)),np.isfinite(p1.values.astype(float)))
 
-        hndls   = []
-        hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='Sine Fit',alpha=0.5)
-        hndls.append(hndl)
-        ax0.set_ylabel(key_0)
-        ax0.set_xlim(sDate,eDate)
+    #     hndls   = []
+    #     hndl    = ax0.bar(p0.index,p0,width=1,color='blue',align='edge',label='Sine Fit',alpha=0.5)
+    #     hndls.append(hndl)
+    #     ax0.set_ylabel(key_0)
+    #     ax0.set_xlim(sDate,eDate)
 
-        ax0r    = ax0.twinx()
-        hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label=compare_ds,alpha=0.5)
-        hndls.append(hndl)
-        ax0r.set_ylabel(key_1)
-        ax0r.legend(handles=hndls,loc='lower right')
+    #     ax0r    = ax0.twinx()
+    #     hndl    = ax0r.bar(p1.index,p1,width=1,color='green',align='edge',label=compare_ds,alpha=0.5)
+    #     hndls.append(hndl)
+    #     ax0r.set_ylabel(key_1)
+    #     ax0r.legend(handles=hndls,loc='lower right')
 
-        scat_data   = dfc[[key_0,key_1]].dropna().sort_values(key_0)
-        p00         = scat_data[key_0].values.astype(float)
-        p11         = scat_data[key_1].values.astype(float)
-        ax1         = fig.add_subplot(gs[rinx,2])
-        ax1.scatter(p00,p11)
+    #     scat_data   = dfc[[key_0,key_1]].dropna().sort_values(key_0)
+    #     p00         = scat_data[key_0].values.astype(float)
+    #     p11         = scat_data[key_1].values.astype(float)
+    #     ax1         = fig.add_subplot(gs[rinx,2])
+    #     ax1.scatter(p00,p11)
         
-        # Curve Fit Line Polynomial #########  
-        coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(p00, p11, 1, full = True)
-        ss_res_line_fit = ss_res[0]
-        line_fit = poly.polyval(p00, coefs)
+    #     # Curve Fit Line Polynomial #########  
+    #     coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(p00, p11, 1, full = True)
+    #     ss_res_line_fit = ss_res[0]
+    #     line_fit = poly.polyval(p00, coefs)
 
-        ss_tot_line_fit      = np.sum( (p1 - np.mean(p1))**2 )
-        r_sqrd_line_fit      = 1 - (ss_res_line_fit / ss_tot_line_fit)
+    #     ss_tot_line_fit      = np.sum( (p1 - np.mean(p1))**2 )
+    #     r_sqrd_line_fit      = 1 - (ss_res_line_fit / ss_tot_line_fit)
 
-        # Calculate percentage of agreed upon days
-        true_count  = df['agree'].sum()
-        total_count = len(df['agree'])
-        true_per    = (true_count / total_count) * 100
+    #     # Calculate percentage of agreed upon days
+    #     true_count  = df['agree'].sum()
+    #     total_count = len(df['agree'])
+    #     true_per    = (true_count / total_count) * 100
 
-        txt = []
-        txt.append('Agree = {!s}%'.format(true_per))
-        txt.append('$N$ Shown = {!s}'.format(len(p00)))
-        txt.append('$N$ Dropped = {!s}'.format(len(dfc) - len(p00)))
-        txt.append('$r^2$ = {:0.2f}'.format(r_sqrd_line_fit))
-        ax1.plot(p00,line_fit,ls='--',label='\n'.join(txt))
+    #     txt = []
+    #     txt.append('Agree = {!s}%'.format(true_per))
+    #     txt.append('$N$ Shown = {!s}'.format(len(p00)))
+    #     txt.append('$N$ Dropped = {!s}'.format(len(dfc) - len(p00)))
+    #     txt.append('$r^2$ = {:0.2f}'.format(r_sqrd_line_fit))
+    #     ax1.plot(p00,line_fit,ls='--',label='\n'.join(txt))
 
-        ax1.legend(loc='lower right',fontsize='x-small')
-        ax1.set_xlabel(key_0)
-        ax1.set_ylabel(key_1)
+    #     ax1.legend(loc='lower right',fontsize='x-small')
+    #     ax1.set_xlabel(key_0)
+    #     ax1.set_ylabel(key_1)
 
-    fig.tight_layout()
+    # fig.tight_layout()
 
-    txt = []
-    txt.append('LSTID Automatic Sinusoid Fit Compared with {!s} Manual Fit'.format(compare_ds))
-    if pct_overlap is not None:
-        txt.append('{:0.0f}% Overlap'.format(pct_overlap))
-    fig.text(0.5,1.0,'\n'.join(txt),ha='center',fontdict={'weight':'bold','size':'x-large'})
+    # txt = []
+    # txt.append('LSTID Automatic Sinusoid Fit Compared with {!s} Manual Fit'.format(compare_ds))
+    # if pct_overlap is not None:
+    #     txt.append('{:0.0f}% Overlap'.format(pct_overlap))
+    # fig.text(0.5,1.0,'\n'.join(txt),ha='center',fontdict={'weight':'bold','size':'x-large'})
 
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
-    print('   Saving: {!s}'.format(png_fpath))
-    fig.savefig(png_fpath,bbox_inches='tight')
+    # if not os.path.exists(output_dir):
+    #     os.mkdir(output_dir)
+    # print('   Saving: {!s}'.format(png_fpath))
+    # fig.savefig(png_fpath,bbox_inches='tight')
 
 def plot_sin_fit_analysis(all_results,
                           T_hr_vmin=0,T_hr_vmax=5,T_hr_cmap='rainbow',
@@ -1256,6 +1259,7 @@ if __name__ == '__main__':
     compare_lstid       = True
     automatic_lstid     = True
     agree_compare_lstid = True
+    raw_data_loader     = True
 #    df_name    = 'MLW' 
     df_name    = 'NAF'
 #    df_name    = 'DFS'
@@ -1269,12 +1273,23 @@ if __name__ == '__main__':
 #    sDate   = datetime.datetime(2018,11,5)
 #    eDate   = datetime.datetime(2018,11,5)
 
+#    sDate   = datetime.datetime(2017,1,1)
+#    eDate   = datetime.datetime(2017,1,1)
+    
     # NO PARAMETERS BELOW THIS LINE ################################################
     if clear_cache and os.path.exists(cache_dir):
         shutil.rmtree(cache_dir)
 
     if clear_cache and os.path.exists(output_dir):
         shutil.rmtree(output_dir)
+
+    if clear_cache and os.path.exists('processed_data'):
+        shutil.rmtree('processed_data')
+
+    # Load Raw CSV data and create 2d hist CSV files
+
+    if not os.path.exists('data_files'):
+        os.mkdir('data_files')
 
     tic = datetime.datetime.now()
     dates   = [sDate]
@@ -1283,7 +1298,27 @@ if __name__ == '__main__':
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
+    if not os.path.exists('processed_data'):
+        os.mkdir('processed_data')
 
+    if raw_data_loader == True:
+        if clear_cache and os.path.exists('data_files'):
+            shutil.rmtree('data_files')
+        for dinx,date in enumerate(dates):
+            processor = RawSpotProcessor(
+                start_date=date,
+                end_date=date,
+                input_dir='raw_data',
+                output_dir='data_files',
+                region='NA', 
+                freq_str='14 MHz',
+                csv_gen=True,
+                hist_gen=True,
+                geo_gen=False,
+                dask=False
+            )
+            processor.run_analysis()
+        
     # Load chosen data to compare #################################################
     if compare_lstid == True:
         if df_name == 'MLW':
@@ -1341,7 +1376,7 @@ if __name__ == '__main__':
     toc = datetime.datetime.now()
 
     print('Processing and plotting time: {!s}'.format(toc-tic))
-    plot_sin_fit_analysis(all_results,output_dir=output_dir)
+#    plot_sin_fit_analysis(all_results,output_dir=output_dir)
     plot_season_analysis(all_results,output_dir=output_dir,compare_ds=df_name)
 
 
