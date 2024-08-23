@@ -1148,20 +1148,7 @@ if __name__ == '__main__':
                 nprocs = nprocs - 2
             with multiprocessing.Pool(nprocs) as pool:
                 pool.map(runRawProcessing,rawProcDicts)
-
         
-    # Load chosen data to compare #################################################
-#    if compare_lstid == True:
-#        if df_name == 'MLW':
-#            df_mlw, mlw_lstid_criteria  = load_df_mlw()
-#            df_dict    = {'df_name': df_name, 'df': df_mlw, 'df_lstid_criteria':mlw_lstid_criteria}
-#        if df_name == 'NAF':
-#            df_naf, naf_lstid_criteria  = load_df_sql()
-#            df_dict    = {'df_name': df_name, 'df': df_naf, 'df_lstid_criteria':naf_lstid_criteria}
-##        if df_name == 'DFS':
-#    else:
-#        df_dict = None
-    
     # Edge Detection ###############################################################
     sDate_str   = sDate.strftime('%Y%m%d')
     eDate_str   = sDate.strftime('%Y%m%d')
