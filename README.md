@@ -37,6 +37,7 @@ Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes ab
 
 # Full Algorithm Description
 ## 1. Data Loading and Gridding
+Data Loading and Gridding is handled by `LSTID.data_loading.RawSpotProcessor()`.
 1. For each day, RBN, PSK, and WSPRNet spot data is combined into a single data frame.
 2. Data is filtered based on frequency, TX-RX midpoint location, and TX-RX ground range. For Frissell et al. (2024, GRL), the following filters are used, which corresponds to 14 MHz signals over North America:
     1. 20˚ < lat < 60˚
