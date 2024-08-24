@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
+# __pycache__/
 *.py[cod]
 *$py.class
 
@@ -166,14 +166,6 @@ cython_debug/
 *.zip
 *.png
 .DS_Store
-output/
-output_manualfit/
 processed_data/
 raw_data/
-cache/
-curve_comboplots/
-data_files/
 labels/
-bokeh_cache/
-Bokeh-Sandbox.ipynb
-data/
