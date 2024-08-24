@@ -34,6 +34,22 @@ def get_dates(sDate,eDate):
     
     return dates
 
+def runEdgeDetectAndPlot(edgeDetectDict):
+    """
+    Wrapper function for edge detection and plotting to use with
+    multiprocessing.
+    """
+    print('Edge Detection: {!s}'.format(edgeDetectDict['date']))
+
+    import ipdb; ipdb.set_trace()
+    result  = run_edge_detect(**edgeDetectDict)
+    if result is None: # Missing Data Case
+       return 
+    
+    auto_crit = edgeDetectDict.get('auto_crit',False)
+    result = curve_combo_plot(result,auto_crit=auto_crit)
+    return result
+
 raw_processing_input_dir = 'raw_data'
 cache_dir                = 'cache'
 heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
@@ -41,7 +57,7 @@ output_dir               = 'output'
 clear_cache              = True
 
 lstid_T_hr_lim           = (1, 4.5)
-multiproc                = True
+multiproc                = False
 nprocs                   = multiprocessing.cpu_count()
 bandpass                 = True
 automatic_lstid          = True
@@ -97,7 +113,6 @@ else:
     
     # Load in CSV Histograms/Heatmaps ###############
     heatmaps    = LSTID.data_loading.HeatmapDateIter(heatmap_csv_dir)
-    import ipdb; ipdb.set_trace()
 
     # Edge Detection, Curve Fitting, and Plotting ##########
     edgeDetectDicts = []
@@ -107,6 +122,7 @@ else:
         tmp['cache_dir']    = cache_dir
         tmp['bandpass']     = bandpass
         tmp['auto_crit']    = automatic_lstid
+        tmp['heatmaps']     = heatmaps
         edgeDetectDicts.append(tmp)
 
     if not multiproc:
@@ -118,6 +134,7 @@ else:
         with multiprocessing.Pool(nprocs) as pool:
             results = pool.map(runEdgeDetectAndPlot,edgeDetectDicts)
 
+    import ipdb; ipdb.set_trace()
     all_results = {}
     for date,result in zip(dates,results):
         if result is None: # No data case
