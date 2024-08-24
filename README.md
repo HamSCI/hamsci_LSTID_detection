@@ -44,3 +44,6 @@ Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes ab
     3. 14 MHz < f < 15 MHz
     4. 0 km < R_gc < 3000 km
 3. Filtered data is gridded into 10 km range by 1 minute bins.
+
+## 2. Heatmap Re-scaling, Smoothing, and Thresholding
+
