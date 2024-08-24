@@ -22,7 +22,6 @@ import string
 letters = string.ascii_lowercase
 
 from raw_spot_processor import RawSpotProcessor
-from ham_spot_plot import HamSpotPlot 
 
 from scipy import signal
 from scipy.signal import stft
@@ -907,10 +906,10 @@ if __name__ == '__main__':
     multiproc                 = True
     output_dir                = 'output'
     cache_dir                 = 'cache'
-    clear_cache               = False
+    clear_cache               = True
     bandpass                  = True
     automatic_lstid           = True
-    raw_data_loader           = False
+    raw_data_loader           = True
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)

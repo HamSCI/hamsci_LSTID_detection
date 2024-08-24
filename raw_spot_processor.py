@@ -137,9 +137,9 @@ class RawSpotProcessor:
         dtype_dict = {'freq': 'float32', 'dist_km': 'float32', 'lat': 'float32', 'long': 'float32'}
 
         for file_path in file_paths:
+            print('Loading csv: ' + file_path,end=' ')
             try:
                 tic = datetime.datetime.now()
-                print('Loading csv: ' + file_path,end=' ')
                 df = pd.read_csv(
                     file_path,
                     header=None,
