@@ -22,8 +22,8 @@ class RawSpotProcessor:
         # Add more predefined frequency ranges here
     }
 
-    DATASETS = ['PSK', 'RBN', 'WSPR']
-#    DATASETS = ['RBN']
+#    DATASETS = ['PSK', 'RBN', 'WSPR']
+    DATASETS = ['RBN']
 
     def __init__(self, start_date, end_date, input_dir, output_dir, 
                  region=None, 
