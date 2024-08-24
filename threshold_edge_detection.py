@@ -1,7 +1,6 @@
 import numpy as np
 import statsmodels.api as sm
 from scipy.interpolate import CubicSpline
-from scipy import signal
 
 def occurrence_max(arr, n, equal=False):
     ## change this to be two sided
@@ -55,13 +54,6 @@ def lowess_smooth(arr, window_size=10, x=None):
     z = sm.nonparametric.lowess(arr, x, frac=frac, return_sorted=False)    
     return z
 
-def butter_smooth(arr, tc_limits=(300, 60), btype='bandpass'):
-    wn = tuple(map(lambda x : 1 / (x * 60), tc_limits))
-    b, a = signal.butter(2, wn, 'bandpass', fs=fs)
-
-    z = signal.filtfilt(b, a, arr)
-    return z
-
 def smooth_remove_abs_deviation(arr, smooth_fn, max_abs_dev=20):
     x = np.arange(0, arr.shape[0], 1)
     z = smooth_fn(arr)
@@ -76,7 +68,6 @@ def select_min_deviation(arrs, smooth_fn, max_abs_dev=20):
     min_arr = None
     min_dev = np.inf
     for arr in arrs:
-#         z = smooth_fn(arr)
         z = smooth_remove_abs_deviation(arr, smooth_fn, max_abs_dev=max_abs_dev)
         dev = np.std(arr - z)
         if min_arr is None or dev < min_dev:
@@ -97,10 +88,3 @@ def measure_thresholds(arr, qs=.8, lower_cutoff=10, **threshold_kwargs):
     min_line, minz_line = select_min_deviation(med_lines, lowess_smooth)
     
     return med_lines, min_line, minz_line
-
-def non_diag_corr(df):
-    arr = df.to_numpy()
-    np.fill_diagonal(arr, np.nan)
-    mean = np.nanmean(arr)
-    return mean
-

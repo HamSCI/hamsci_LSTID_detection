@@ -11,7 +11,6 @@ import xarray as xr
 import joblib
 import math
 import datetime
-import seaborn as sns
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -23,13 +22,11 @@ letters = string.ascii_lowercase
 
 from raw_spot_processor import RawSpotProcessor
 
-from scipy import signal
-from scipy.signal import stft
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
 from data_loading import create_xarr, mad, DateIter
-from threshold_edge_detection import lowess_smooth, measure_thresholds
+from threshold_edge_detection import measure_thresholds
 
 parent_dir      = 'data_files'
 data_out_path   = 'processed_data/full_data.joblib'
@@ -184,7 +181,6 @@ def run_edge_detect(
     qs=[.4, .5, .6],
     occurence_n = 60,
     i_max=30,
-    thresh=None,
     cache_dir='cache',
     bandpass=True,
     **kwArgs):
@@ -217,7 +213,6 @@ def run_edge_detect(
         arr_times   = [date + x for x in pd.to_timedelta(arr.coords['time'])]
         Ts          = np.mean(np.diff(arr_times)) # Sampling Period
 
-        arr_xr  = arr
         arr     = np.nan_to_num(arr, nan=0)
 
         arr = gaussian_filter(arr.T, sigma=(sigma, sigma))  # [::-1,:]
@@ -237,27 +232,6 @@ def run_edge_detect(
             index=arr_times,
             columns=qs,
         ).reset_index(names='Time')
-
-        if thresh is None:
-            edge_line = pd.DataFrame(
-                min_line, 
-                index=arr_times,
-                columns=['Height'],
-            ).reset_index(
-                names='Time'
-            )
-        elif isinstance(thresh, dict):
-            edge_line = (
-                med_lines[['Time', thresh[date]]]
-                .rename(columns={thresh[date] : 'Height'})
-            )
-        elif isinstance(thresh, float):
-            edge_line = (
-                med_lines[['Time', thresh]]
-                .rename(columns={thresh : 'Height'})
-            )
-        else:
-            raise ValueError(f'Threshold {thresh} of type {type(thresh)} is invalid')
 
         edge_0  = pd.Series(min_line.squeeze(), index=arr_times, name=date)
         edge_0  = edge_0.interpolate()
@@ -542,7 +516,7 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
         if not plot_fit:
             ax.set_title(f'| {date} |')
         else:
-            ed0_line    = ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
+            ax.plot(arr_times,edge_0,lw=2,label='Detected Edge')
 
             if p0_sin_fit != {}:
                 ax.plot(sin_fit.index,sin_fit+poly_fit,label='Sin Fit',color='white',lw=3,ls='--')
@@ -692,14 +666,6 @@ def plot_sin_fit_analysis(all_results,
     """
     Plot an analysis of the sin fits for the entire season.
     """
-    cbar_title_fontdict     = {'weight':'bold','size':42}
-    cbar_ytick_fontdict     = {'weight':'bold','size':36}
-    xtick_fontdict          = {'weight': 'bold', 'size':mpl.rcParams['ytick.labelsize']}
-    ytick_major_fontdict    = {'weight': 'bold', 'size':24}
-    ytick_minor_fontdict    = {'weight': 'bold', 'size':24}
-    title_fontdict          = {'weight': 'bold', 'size':36}
-    ylabel_fontdict         = {'weight': 'bold', 'size':24}
-    reduced_legend_fontdict = {'weight': 'bold', 'size':20}
 
     sDate   = min(all_results.keys())
     eDate   = max(all_results.keys())
@@ -806,13 +772,14 @@ def plot_sin_fit_analysis(all_results,
         ax.legend(loc='upper right',ncols=2)
 
         trans           = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
-        hndl            = ax.bar(xx,1,width=1,color=color,align='edge',zorder=-1,transform=trans,alpha=0.5)
+        ax.bar(xx,1,width=1,color=color,align='edge',zorder=-1,transform=trans,alpha=0.5)
 
         cbar_info[ax_inx] = cbd = {}
         cbd['ax']       = ax
         cbd['label']    = label
         cbd['mpbl']     = mpbl
 
+        ylabel_fontdict         = {'weight': 'bold', 'size':24}
         ax.set_ylabel(label,fontdict=ylabel_fontdict)
         my_xticks(sDate,eDate,ax,fmt='%d %b')
         ltr = '({!s}) '.format(letters[ax_inx-1])
@@ -855,7 +822,7 @@ def plot_sin_fit_analysis(all_results,
                     # [left, bottom,       width, height]
         cbar_pos    = [1.025,  ax_pos.p0[1], 0.02,   ax_pos.height] 
         cax         = fig.add_axes(cbar_pos)
-        cbar        = fig.colorbar(cbd['mpbl'],label=cbd['label'],cax=cax)
+        fig.colorbar(cbd['mpbl'],label=cbd['label'],cax=cax)
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
@@ -938,7 +905,7 @@ if __name__ == '__main__':
             os.mkdir(raw_processing_output_dir)
 
         rawProcDicts    = []
-        for dinx,date in enumerate(dates):
+        for date in dates:
             tmp = dict(
                 start_date=date,
                 end_date=date,
@@ -983,7 +950,7 @@ if __name__ == '__main__':
 
         # Edge Detection, Curve Fitting, and Plotting ##########
         edgeDetectDicts = []
-        for dinx,date in enumerate(dates):
+        for date in dates:
             tmp = {}
             tmp['date']         = date
             tmp['cache_dir']    = cache_dir

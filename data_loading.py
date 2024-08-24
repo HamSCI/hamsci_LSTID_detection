@@ -67,22 +67,12 @@ class DateIter():
             return xarr
     
     def iter_dates(self, dates, skip_missing=False, **get_kwargs):
-#         assert isinstance(dates, list), 'Must pass list, either of datetimes/strings or tuples of datetimes/strings'
         for date in dates:
             if isinstance(date, tuple):
                 start_date, end_date = date
                 dates = pd.date_range(start=start_date, end=end_date)
                 for date, arr in self.iter_dates(dates, skip_missing=skip_missing, **get_kwargs):
                     yield date, arr
-                # for date in dates:
-                    # this should be recursive
-                    # if skip_missing:
-                    #     try:
-                    #         yield date, self.get_date(date, **get_kwargs)
-                    #     except KeyError:
-                    #         continue
-                    # else:
-                    #     yield date, self.get_date(date, **get_kwargs)
             else:
                 if skip_missing:
                     try:
@@ -130,7 +120,7 @@ def pad_img(img, expected_shape=(1440, 300), dtype=np.uint8):
         img = pad_axis(img, expected_shape[i], axis=i, dtype=dtype)
     return img
 
-def cut_half(img, expected_size=1440): #, vempty=True):
+def cut_half(img, expected_size=1440):
     """ Simple preprocessing for image, could add additional adjustments here """
     if expected_size:
         assert img.shape[0] == expected_size, f'Mismatch with width, dim 0 of {img.shape} != {expected_size}'
