@@ -1,5 +1,5 @@
 # hamsci_LSTID_detection
-Code for automatically detecting LSTIDs from ham radio spot data.
+Code for automatically detecting Large Scale Traveling Ionospheric Disturbances (LSTIDs) from ham radio spot data.
 
 Developed by the HamSCI NASA SWO2R Team with major contributions by:
 * Nathaniel Frissell W2NAF
