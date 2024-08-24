@@ -3,8 +3,6 @@ import sys
 import logging
 import datetime
 
-import joblib
-
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -15,6 +13,15 @@ from dask.diagnostics import ProgressBar
 # Diego/Nathaniel's Code for Loadig Raw Spots and ##############################
 #   and Creating Preprocessed Heatmaps #########################################
 ################################################################################
+
+def runRawProcessing(rawProcDict):
+    """
+    Wrapper function to use RawSpotProcessor() with multiprocessing.
+    """
+    processor = RawSpotProcessor(**rawProcDict)
+    processor.run_analysis()
+    return processor
+
 class RawSpotProcessor:
     REGION_COORDINATES = {
         'NA': {'min_lat': 20, 'max_lat': 60, 'min_lon': -160, 'max_lon': -60},
@@ -286,42 +293,13 @@ class RawSpotProcessor:
             if self.geo_gen:
                 self.save_geo_data()
 
-
-
-
-
-
-
-
 ################################################################################
 # Nick Callahan's Code for Loading Preprocessed Heatmaps #######################
 ################################################################################
 
 class DateIter():
-    def __init__(self, xarr, label_df=None, apply_fn=None):
-        if isinstance(xarr, xr.DataArray):
-            self.data = xarr
-        elif isinstance(xarr, str):
-            self.data = joblib.load(xarr)
-        else:
-            raise TypeError(f'Unexpected type {type(xarr)} for input array')
-        
-        if label_df is None or isinstance(label_df, pd.DataFrame):
-            self.label_df = label_df
-        elif isinstance(label_df, str):
-            self.label_df = joblib.load(label_df)
-        else:
-            raise TypeError(f'Unexpected type {type(label_df)} for input array')
-        
-        if self.label_df is not None:
-            label_index = self.label_df.index
-            data_index = self.data.indexes['date']
-            if not np.all(label_index.isin(data_index)):
-                missing_dates = label_index[label_index.isin(data_index)].tolist()
-                raise ValueError(
-                    f'Missing the following dates represented with labels: {missing_dates}'
-                )
-        
+    def __init__(self, xarr, apply_fn=None):
+        self.data = xarr
         self._apply_fn = apply_fn
         return
     
@@ -421,15 +399,22 @@ def cut_half(img, expected_size=1440):
     img = img[expected_size // 2:,:]
     return img
 
+def mad(t, min_dev=.05):
+    median = np.median(t, axis=(0, 1), keepdims=True)
+    abs_devs = np.abs(t - median)
+    mad = abs_devs / max(np.median(abs_devs, axis=(0, 1), keepdims=True), min_dev)
+    assert t.shape == mad.shape, f'{t.shape} | {mad.shape}'
+    return mad
+
 def create_xarr(
     parent_dir='raw_data/', 
     filter_fn=None, 
     max_iter=None, 
     read_pandas=True, 
     expected_shape=(720, 300),
-    dtype=np.uint8, 
+    dtype=(np.uint16, np.float32),
     height_start=0, 
-    apply_fn=None,
+    apply_fn=mad,
     split_idx=1,
 ):
     in_dtype, out_dtype = dtype if len(dtype) == 2 else (dtype, dtype)
@@ -482,10 +467,3 @@ def create_xarr(
         dims=['date','time','height'],
     )
     return full_xarr
-
-def mad(t, min_dev=.05):
-    median = np.median(t, axis=(0, 1), keepdims=True)
-    abs_devs = np.abs(t - median)
-    mad = abs_devs / max(np.median(abs_devs, axis=(0, 1), keepdims=True), min_dev)
-    assert t.shape == mad.shape, f'{t.shape} | {mad.shape}'
-    return mad
