@@ -166,6 +166,4 @@ cython_debug/
 *.zip
 *.png
 .DS_Store
-processed_data/
 raw_data/
-labels/
