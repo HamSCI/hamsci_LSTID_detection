@@ -37,7 +37,7 @@ Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes ab
 
 # Full Algorithm Description
 ## 1. Data Loading and Gridding
-Data Loading and Gridding is handled by `LSTID.data_loading.RawSpotProcessor()`.
+Data Loading and Gridding is handled by `hamsci_LSTID_detect.data_loading.RawSpotProcessor()`.
 1. For each day, RBN, PSK, and WSPRNet spot data is combined into a single data frame.
 2. Data is filtered based on frequency, TX-RX midpoint location, and TX-RX ground range. For Frissell et al. (2024, GRL), the following filters are used, which corresponds to 14 MHz signals over North America:
     1. 20˚ < lat < 60˚
@@ -46,7 +46,17 @@ Data Loading and Gridding is handled by `LSTID.data_loading.RawSpotProcessor()`.
     4. 0 km < R_gc < 3000 km
 3. Filtered data is gridded into 10 km range by 1 minute bins.
 
-## 2. Heatmap Re-scaling, Smoothing, and Thresholding
-Heatmap Re-scaling, Smoothing, and Thresholding is handled by `LSTID.data_loading.create_xarr()`.
+## 2. Gridded Array Re-scaling
+Gridded array re-scaling is handled by `hamsci_LSTID_detect.data_loading.create_xarr()`.
 1. Data array is trimmed so that only daylight hours in North America are used (1200-2359 UTC).
-2. 
+2. A scaled version $M_{ad}$ of the gridded array $A$ is computed by `hamsci_LSTID_detect.data_loading.mad()` as follows:
+$$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
+
+## 3. Skip Distance Edge-Detection
+Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+1. The x- and y- dimensions of the gridded array are trimmed by 8%.
+2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
+3.  
+
+## 4. Sin-Fitting
+
