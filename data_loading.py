@@ -1,13 +1,7 @@
 import pandas as pd
 import numpy as np
 import xarray as xr
-
-import matplotlib.pyplot as plt
-import scipy.stats as st
-
 import os
-import datetime
-import joblib
 
 def pad_axis(arr, expected_size, dtype=np.uint8, axis=0):
     shape_mismatch = expected_size - arr.shape[axis]
@@ -54,14 +48,11 @@ def create_xarr(
     expected_shape=(720, 300),
     dtype=np.uint8, 
     height_start=0, 
-    time_start='12:00',
     apply_fn=None,
-    plot=True,
     split_idx=1,
 ):
     in_dtype, out_dtype = dtype if len(dtype) == 2 else (dtype, dtype)
     img_list = list()
-    stat_list = list()
     file_list = sorted(os.listdir(parent_dir))
     if filter_fn is None:
         filter_fn = lambda x : x.endswith('.csv')
@@ -71,8 +62,6 @@ def create_xarr(
         if max_iter is not None and i >= max_iter: break
         print(i, end='\r')
         split_file = file.split('_')
-        # if len(split_file) != 3:
-        #     raise ValueError('Split index incorrect')
         try:
             date = pd.to_datetime(split_file[split_idx].replace('.csv',''))
         except pd.errors.ParserError:
@@ -118,9 +107,6 @@ def create_xarr(
         dims=['date','time','height'],
     )
     return full_xarr
-
-def str_to_float_col(x):
-    return x.astype(str).str.strip().replace('',0).astype(np.float32)
 
 def mad(t, min_dev=.05):
     median = np.median(t, axis=(0, 1), keepdims=True)

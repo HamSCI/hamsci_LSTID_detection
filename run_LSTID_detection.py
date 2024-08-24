@@ -28,7 +28,7 @@ from scipy.signal import stft
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
-from data_loading import create_xarr, mad#, create_label_df
+from data_loading import create_xarr, mad
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
 
@@ -991,8 +991,7 @@ if __name__ == '__main__':
                 parent_dir=parent_dir,
                 expected_shape=(720, 300),
                 dtype=(np.uint16, np.float32),
-                apply_fn=mad,
-                plot=False,
+                apply_fn=mad)
             )
             joblib.dump(full_xarr, data_out_path)
 
