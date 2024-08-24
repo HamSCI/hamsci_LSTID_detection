@@ -3,6 +3,7 @@
 import os
 import shutil
 import datetime
+import pickle
 import multiprocessing
 import numpy as np
 
@@ -41,13 +42,12 @@ def runEdgeDetectAndPlot(edgeDetectDict):
     """
     print('Edge Detection: {!s}'.format(edgeDetectDict['date']))
 
-    import ipdb; ipdb.set_trace()
-    result  = run_edge_detect(**edgeDetectDict)
+    result  = LSTID.edge_detection.run_edge_detect(**edgeDetectDict)
     if result is None: # Missing Data Case
        return 
     
     auto_crit = edgeDetectDict.get('auto_crit',False)
-    result = curve_combo_plot(result,auto_crit=auto_crit)
+    result = LSTID.plotting.curve_combo_plot(result,auto_crit=auto_crit)
     return result
 
 raw_processing_input_dir = 'raw_data'
@@ -57,7 +57,7 @@ output_dir               = 'output'
 clear_cache              = True
 
 lstid_T_hr_lim           = (1, 4.5)
-multiproc                = False
+multiproc                = True
 nprocs                   = multiprocessing.cpu_count()
 bandpass                 = True
 automatic_lstid          = True
@@ -134,7 +134,6 @@ else:
         with multiprocessing.Pool(nprocs) as pool:
             results = pool.map(runEdgeDetectAndPlot,edgeDetectDicts)
 
-    import ipdb; ipdb.set_trace()
     all_results = {}
     for date,result in zip(dates,results):
         if result is None: # No data case
@@ -147,8 +146,8 @@ else:
         pickle.dump(all_results,fl)
 
 
-plot_sin_fit_analysis(all_results,output_dir=output_dir)
-plot_season_analysis(all_results,output_dir=output_dir)
+LSTID.plotting.plot_sin_fit_analysis(all_results,output_dir=output_dir)
+LSTID.plotting.plot_season_analysis(all_results,output_dir=output_dir)
 
 toc = datetime.datetime.now()
 print('Processing and plotting time: {!s}'.format(toc-tic))

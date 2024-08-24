@@ -326,20 +326,20 @@ class HeatmapDateIter():
         except KeyError as ke:
             if raise_missing:
                 raise ke
-            elif self.label_df is not None:
-                return None, None
+#            elif self.label_df is not None:
+#                return None, None
             else:
                 return
         
-        if self.apply_fn is not None:
-            xarr = self.apply_fn(xarr)
-
-        if self.label_df is not None:
-            try:
-                label = self.label_df.loc[date,['xmin','xmax']]
-            except KeyError:
-                label = None
-            return xarr, label
+#        if self.apply_fn is not None:
+#            xarr = self.apply_fn(xarr)
+#
+#        if self.label_df is not None:
+#            try:
+#                label = self.label_df.loc[date,['xmin','xmax']]
+#            except KeyError:
+#                label = None
+#            return xarr, label
         else:
             return xarr
     

@@ -16,7 +16,6 @@ from scipy.interpolate import CubicSpline
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
-from threshold_edge_detection import measure_thresholds
 
 lstid_T_hr_lim  = (1, 4.5)
 
@@ -174,14 +173,15 @@ def bandpass_filter(
 
 def run_edge_detect(
     date,
-    x_trim=.08333,
-    y_trim=.08,
-    sigma=4.2, # 3.8 was good # Gaussian filter kernel
-    qs=[.4, .5, .6],
+    heatmaps    = None,
+    x_trim      = .08333,
+    y_trim      = .08,
+    sigma       = 4.2, # 3.8 was good # Gaussian filter kernel
+    qs          = [.4, .5, .6],
     occurence_n = 60,
-    i_max=30,
-    cache_dir='cache',
-    bandpass=True,
+    i_max       = 30,
+    cache_dir   = 'cache',
+    bandpass    = True,
     **kwArgs):
     """
     """
@@ -195,7 +195,7 @@ def run_edge_detect(
         with open(pkl_fpath,'rb') as fl:
             result = pickle.load(fl)
     else:
-        arr = date_iter.get_date(date,raise_missing=False)
+        arr = heatmaps.get_date(date,raise_missing=False)
 
         if arr is None:
             warnings.warn(f'Date {date} has no input')
