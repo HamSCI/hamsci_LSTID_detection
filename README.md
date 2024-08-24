@@ -35,4 +35,4 @@ xarray==2023.6.0
 # Notes
 Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes about 12 minutes to process the 1 November 2018 - 30 April 2019 data from https://doi.org/10.5281/zenodo.10673982.
 
-# Algorithm Description
+# Full Algorithm Description
