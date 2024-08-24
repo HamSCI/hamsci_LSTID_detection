@@ -388,7 +388,7 @@ def create_xarr(
     filter_fn=None, 
     max_iter=None, 
     read_pandas=True, 
-    expected_shape=(720, 300),
+    expected_shape=(720, 300), # (720, 300) --> (720 minutes, 3000 km)
     dtype=(np.uint16, np.float32),
     height_start=0, 
     apply_fn=mad,

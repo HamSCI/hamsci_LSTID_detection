@@ -100,6 +100,7 @@ def measure_thresholds(arr, qs=.8, lower_cutoff=10, **threshold_kwargs):
     thresh_edge_arr = thresh_edge_arr.astype(np.float32)
     thresh_edge_arr[thresh_edge_arr < lower_cutoff] = np.nan   
     
+    # Make sure qs is iterable.
     if isinstance(qs, float):
         qs = [qs]
 
