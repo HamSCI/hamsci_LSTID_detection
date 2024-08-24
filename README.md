@@ -54,6 +54,7 @@ $$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
 
 ## 3. Skip Distance Edge-Detection
 Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+https://github.com/w2naf/lstid_detection_hamSpots/blob/hamsci_LSTID_detect/hamsci_LSTID_detect/edge_detection.py#L172-L208C1
 1. The x- and y- dimensions of the gridded array are trimmed by 8%.
 2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
 3.  
