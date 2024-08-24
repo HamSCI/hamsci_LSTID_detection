@@ -287,13 +287,7 @@ def run_edge_detect(
         edge_1      = pd.Series(interp,index=times_interp,name=date)
         
         sg_edge     = edge_1.copy()
-        
-#        sg_win      = datetime.timedelta(hours=4)
-#        sg_win_N    = int(sg_win.total_seconds()/Ts.total_seconds())
-#        sg_edge[:]  = signal.savgol_filter(edge_1,sg_win_N,4)
-
         tf = np.logical_and(sg_edge.index >= winlim[0], sg_edge.index < winlim[1])
-#        sg_edge[tf]  = sg_edge[tf]*np.hanning(np.sum(tf))
         sg_edge[~tf] = 0
 
         # Curve Fit Data ############################################################### 
@@ -374,13 +368,6 @@ def run_edge_detect(
 
             if bandpass == True:
                 data_detrend = filtered_detrend
-#            data_detrend.to_csv('detrend_for_testing.csv')
-#            # Get MLW's initial guess
-#            if date in df_mlw.index:
-#                mlw = df_mlw.loc[date,:]
-#            else:
-#                mlw = {}
-#            guess_T_hr = mlw.get('MLW_period_hr',3.)
 
             T_hr_guesses = np.arange(1,4.5,0.5)
             
@@ -422,8 +409,7 @@ def run_edge_detect(
 
         if len(all_sin_fits) > 0:
             all_sin_fits = sorted(all_sin_fits, key=itemgetter('r2'), reverse=True)
-#                for fr in all_sin_fits:
-#                    print(fr['r2'],fr['T_hr'])
+
             # Pick the best fit sinusoid.
             p0_sin_fit                  = all_sin_fits[0]
             p0                          = p0_sin_fit.copy()
@@ -638,6 +624,7 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
         results['sin_is_lstid']  = {'msg':'Auto', 'classification': p0_sin_fit.get('is_lstid')}
 
     fig.tight_layout()
+
     # Account for colorbars and line up all axes.
     for ax_inx, ax in enumerate(axs):
         if ax_inx == 0:
@@ -732,7 +719,6 @@ def plot_sin_fit_analysis(all_results,
     params.append('r2')
     params.append('T_hr_guess')
     params.append('selected')
-#    params.append('is_lstid')
 
     df_lst = []
     df_inx = []
