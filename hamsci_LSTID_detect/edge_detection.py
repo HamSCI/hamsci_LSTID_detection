@@ -173,17 +173,29 @@ def bandpass_filter(
 def run_edge_detect(
     date,
     heatmaps,
-    x_trim      = .08333,
-    y_trim      = .08,
-    sigma       = 4.2, # 3.8 was good # Gaussian filter kernel
-    qs          = [.4, .5, .6],
-    occurence_n = 60,
-    i_max       = 30,
-    cache_dir   = 'cache',
+    x_trim          = .08333,
+    y_trim          = .08,
+    sigma           = 4.2, # 3.8 was good # Gaussian filter kernel
+    qs              = [.4, .5, .6],
+    occurence_n     = 60,
+    i_max           = 30,
+    cache_dir       = 'cache',
+    bandpass        = True,
     lstid_T_hr_lim  = (1, 4.5),
-    bandpass    = True,
+    lstid_criteria  = {},
     **kwArgs):
     """
+    bandpass:   Apply a bandpass filter after detrending but before sin fitting.
+
+    lstid_T_hr_lim: Values used for cutoff of the bandpass filter and for 
+                    LSTID classification (unless changed with lstid_criteria
+                    dictionary.
+
+    lstid_criteria: Dictionary used for classifying a day as LSTID-active.
+        The following values are used if not explicity specified:
+            lstid_criteria['T_hr']          = lstid_T_hr_lim    
+            lstid_criteria['amplitude_km']  = (20,2000)
+            lstid_criteria['r2']            = (0.35,1.1)
     """
 
     arr = heatmaps.get_date(date,raise_missing=False)
@@ -392,10 +404,12 @@ def run_edge_detect(
         data_detrend = sin_fit.copy()
 
     # Classification
-    lstid_criteria = {}
-    lstid_criteria['T_hr']          = lstid_T_hr_lim    
-    lstid_criteria['amplitude_km']  = (20,2000)
-    lstid_criteria['r2']            = (0.35,1.1)
+    if 'T_hr' not in lstid_criteria:
+        lstid_criteria['T_hr']          = lstid_T_hr_lim    
+    if 'amplitude_km' not in lstid_criteria:
+        lstid_criteria['amplitude_km']  = (20,2000)
+    if 'r2' not in lstid_criteria:
+        lstid_criteria['r2']            = (0.35,1.1)
     
     if p0_sin_fit != {}:
         crits   = []
