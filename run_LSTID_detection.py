@@ -5,7 +5,6 @@ import shutil
 import datetime
 import pickle
 import multiprocessing
-import numpy as np
 
 import hamsci_LSTID_detect as LSTID
 
