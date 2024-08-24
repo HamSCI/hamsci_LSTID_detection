@@ -9,6 +9,29 @@ import numpy as np
 
 import hamsci_LSTID_detect as LSTID
 
+# EDIT PARAMETERS HERE #########################################################
+raw_processing_input_dir = 'raw_data'
+datasets                = ['PSK','RBN','WSPR']
+
+clear_cache              = True
+cache_dir                = 'cache'
+heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
+edge_dir                 = os.path.join(cache_dir,'edge_detect')
+output_dir               = 'output'
+
+multiproc                = True # Use multiprocessing
+nprocs                   = multiprocessing.cpu_count()
+bandpass                 = True
+
+automatic_lstid          = True     # Automatic LSTID Classification
+lstid_T_hr_lim           = (1, 4.5) # LSTID Classification Period Criteria
+
+region                   = 'NA' # 'NA' --> North America
+freq_str                 = '14 MHz'
+sDate                    = datetime.datetime(2018,11,1)
+eDate                    = datetime.datetime(2019,4,30)
+
+# NO PARAMETERS BELOW THIS LINE ################################################
 def prep_dirs(*dirs,clear_cache=False):
     """
     Prepare output directories:
@@ -69,34 +92,12 @@ def runEdgeDetectAndPlot(edgeDetectDict):
     result = LSTID.plotting.curve_combo_plot(result,auto_crit=auto_crit)
     return result
 
-raw_processing_input_dir = 'raw_data'
-cache_dir                = 'cache'
-heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
-edge_dir                 = os.path.join(cache_dir,'edge_detect')
-output_dir               = 'output'
-clear_cache              = True
-datasets                = ['PSK','RBN','WSPR']
-#datasets                = ['RBN']
-
-lstid_T_hr_lim           = (1, 4.5)
-multiproc                = True
-nprocs                   = multiprocessing.cpu_count()
-bandpass                 = True
-automatic_lstid          = True
-raw_data_loader          = True
-
-region                   = 'NA' # 'NA' --> North America
-freq_str                 = '14 MHz'
-sDate                    = datetime.datetime(2018,11,1)
-eDate                    = datetime.datetime(2019,4,30)
-
-# NO PARAMETERS BELOW THIS LINE ################################################
 tic = datetime.datetime.now()
 
 prep_dirs(cache_dir,heatmap_csv_dir,edge_dir,output_dir,clear_cache=clear_cache)
 dates   = get_dates(sDate,eDate)
 
-# Cache All Results to a Pick File #############################################
+# Cache All Results to a Pickle File ###########################################
 sDate_str   = sDate.strftime('%Y%m%d')
 eDate_str   = eDate.strftime('%Y%m%d')
 pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
