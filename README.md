@@ -36,9 +36,11 @@ xarray==2023.6.0
 Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes about 12 minutes to process the 1 November 2018 - 30 April 2019 data from https://doi.org/10.5281/zenodo.10673982.
 
 # Full Algorithm Description
-1. For each day, RBN, PSK, and WSPRNet spot data is combined and gridded into 10 km range by 1 minute bins.
+## 1. Data Loading and Gridding
+1. For each day, RBN, PSK, and WSPRNet spot data is combined into a single data frame.
 2. Data is filtered based on frequency, TX-RX midpoint location, and TX-RX ground range. For Frissell et al. (2024, GRL), the following filters are used, which corresponds to 14 MHz signals over North America:
     1. 20˚ < lat < 60˚
     2. -160˚ < lon < -60˚
     3. 14 MHz < f < 15 MHz
     4. 0 km < R_gc < 3000 km
+3. Filtered data is gridded into 10 km range by 1 minute bins.
