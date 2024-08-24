@@ -58,5 +58,19 @@ Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.r
 2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
 3.  
 
-## 4. Sin-Fitting
-
+## 4. Sine Fitting
+A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+1. A 15 minute rolling coefficient of variation $CV = \sigma/\mu$ is computed on the raw detected edge for use as a quality parameter.
+2. The largest contiguous time period between 1330 and 2230 UTC where $CV < 0.5$ is selected as "good".
+3. A 2nd-degree polynomial is fit to the good period.
+4. The raw detected edge within this time period is detrended using a least-squares best-fit second degree polynomial.
+5. A $1 < T < 5$ hr bandpass filter is applied to the detrended edge.
+6. This filtered, detrended result is curve-fit to $$A\sin(2\pi ft+\phi) + mt +b$$ to determine the LSTID amplitude $A$ and period $T=1/f$.
+     1. `scipy.optimize.curve_fit()` is used as the curve fitter.
+     2. The curve fit routine is run for each of the follwing intital period guesses: $T_{hr} = [1,1.5,2,2.5,3,3.5,4].
+     3. Other parameter initial guesses are as follows:
+        - `guess['amplitude_km']   = np.ptp(data_detrend)/2.`
+        - `guess['phase_hr']       = 0.`
+        - `guess['offset_km']      = np.mean(data_detrend)`
+        - `guess['slope_kmph']     = 0.`
+     4. The fit with the highest $r^2$ value is selected as the best fit.
