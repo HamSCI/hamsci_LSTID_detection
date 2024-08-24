@@ -118,11 +118,12 @@ else:
     edgeDetectDicts = []
     for date in dates:
         tmp = {}
-        tmp['date']         = date
-        tmp['cache_dir']    = cache_dir
-        tmp['bandpass']     = bandpass
-        tmp['auto_crit']    = automatic_lstid
-        tmp['heatmaps']     = heatmaps
+        tmp['date']           = date
+        tmp['cache_dir']      = cache_dir
+        tmp['bandpass']       = bandpass
+        tmp['auto_crit']      = automatic_lstid
+        tmp['heatmaps']       = heatmaps
+        tmp['lstid_T_hr_lim'] = lstid_T_hr_lim
         edgeDetectDicts.append(tmp)
 
     if not multiproc:
@@ -144,7 +145,6 @@ else:
     with open(pkl_fpath,'wb') as fl:
         print('PICKLING: {!s}'.format(pkl_fpath))
         pickle.dump(all_results,fl)
-
 
 LSTID.plotting.plot_sin_fit_analysis(all_results,output_dir=output_dir)
 LSTID.plotting.plot_season_analysis(all_results,output_dir=output_dir)

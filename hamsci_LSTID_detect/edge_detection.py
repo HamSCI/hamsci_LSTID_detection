@@ -17,8 +17,6 @@ from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
 
-lstid_T_hr_lim  = (1, 4.5)
-
 ################################################################################
 # Nick's Edge Detection Code ###################################################
 ################################################################################
@@ -181,6 +179,7 @@ def run_edge_detect(
     occurence_n = 60,
     i_max       = 30,
     cache_dir   = 'cache',
+    lstid_T_hr_lim  = (1, 4.5),
     bandpass    = True,
     **kwArgs):
     """
