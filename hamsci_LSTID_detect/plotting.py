@@ -246,9 +246,9 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     result_dct['p0_sin_fit'] = p0_sin_fit
     return result_dct
 
-def plot_season_analysis(all_results,output_dir='output'):
+def sin_fit_key_params_to_csv(all_results,output_dir='output'):
     """
-    Plot the LSTID analysis for the entire season.
+    Generate a CSV with sin fit parameters for an entire season.
     """
 
     sDate   = min(all_results.keys())
@@ -256,8 +256,6 @@ def plot_season_analysis(all_results,output_dir='output'):
 
     sDate_str   = sDate.strftime('%Y%m%d')
     eDate_str   = sDate.strftime('%Y%m%d')
-    png_fname   = '{!s}-{!s}_seasonAnalysis.png'.format(sDate_str,eDate_str)
-    png_fpath   = os.path.join(output_dir,png_fname)
 
     # Create parameter dataframe.
     params = []

@@ -35,14 +35,12 @@ class RawSpotProcessor:
         # Add more predefined frequency ranges here
     }
 
-#    DATASETS = ['PSK', 'RBN', 'WSPR']
-    DATASETS = ['RBN']
-
     def __init__(self, start_date, end_date, input_dir, output_dir, 
                  region=None, 
                  custom_coords=None, 
                  freq_str=None, 
                  custom_freq=None, 
+                 datasets=['PSK','RBN','WSPR'],
                  config=None,
                  hist_gen=False,
                  geo_gen=False,
@@ -52,18 +50,19 @@ class RawSpotProcessor:
         Initializes the DataAnalyzer object with the given settings and configuration.
         """
 
-        self.start_date = start_date
-        self.end_date = end_date
-        self.input_dir = input_dir
-        self.output_dir = output_dir
-        self.region = region
+        self.start_date    = start_date
+        self.end_date      = end_date
+        self.input_dir     = input_dir
+        self.output_dir    = output_dir
+        self.region        = region
         self.custom_coords = custom_coords
-        self.freq_str = freq_str
-        self.custom_freq = custom_freq
-        self.hist_gen = hist_gen
-        self.geo_gen = geo_gen
-        self.csv_gen = csv_gen
-        self.dask    = dask
+        self.freq_str      = freq_str
+        self.custom_freq   = custom_freq
+        self.DATASETS      = datasets
+        self.hist_gen      = hist_gen
+        self.geo_gen       = geo_gen
+        self.csv_gen       = csv_gen
+        self.dask          = dask
 
         # Extract date range for file selection
         self.file_date_range = pd.date_range(start=start_date, end=end_date).strftime('%Y-%m-%d')

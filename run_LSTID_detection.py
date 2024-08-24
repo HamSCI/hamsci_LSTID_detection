@@ -40,9 +40,28 @@ def runEdgeDetectAndPlot(edgeDetectDict):
     Wrapper function for edge detection and plotting to use with
     multiprocessing.
     """
-    print('Edge Detection: {!s}'.format(edgeDetectDict['date']))
+    date        = edgeDetectDict['date']
+    cache_dir   = edgeDetectDict.get('cache_dir','cache')
+    print('Edge Detection: {!s}'.format(date))
 
-    result  = LSTID.edge_detection.run_edge_detect(**edgeDetectDict)
+    date_str    = date.strftime('%Y%m%d')
+    pkl_fname   = f'{date_str}_edgeDetect.pkl'
+    pkl_fpath   = os.path.join(cache_dir,pkl_fname)
+
+    if os.path.exists(pkl_fpath):
+        print('   LOADING: {!s}'.format(pkl_fpath))
+        with open(pkl_fpath,'rb') as fl:
+            result = pickle.load(fl)
+    else:
+        result  = LSTID.edge_detection.run_edge_detect(**edgeDetectDict)
+
+        if not os.path.exists(cache_dir):
+            os.mkdir(cache_dir)
+
+        with open(pkl_fpath,'wb') as fl:
+            print('   PICKLING: {!s}'.format(pkl_fpath))
+            pickle.dump(result,fl)
+
     if result is None: # Missing Data Case
        return 
     
@@ -53,8 +72,11 @@ def runEdgeDetectAndPlot(edgeDetectDict):
 raw_processing_input_dir = 'raw_data'
 cache_dir                = 'cache'
 heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
+edge_dir                 = os.path.join(cache_dir,'edge_detect')
 output_dir               = 'output'
 clear_cache              = True
+datasets                = ['PSK','RBN','WSPR']
+#datasets                = ['RBN']
 
 lstid_T_hr_lim           = (1, 4.5)
 multiproc                = True
@@ -66,12 +88,12 @@ raw_data_loader          = True
 region                   = 'NA' # 'NA' --> North America
 freq_str                 = '14 MHz'
 sDate                    = datetime.datetime(2018,11,1)
-eDate                    = datetime.datetime(2018,11,5)
+eDate                    = datetime.datetime(2019,4,30)
 
 # NO PARAMETERS BELOW THIS LINE ################################################
 tic = datetime.datetime.now()
 
-prep_dirs(heatmap_csv_dir,output_dir,cache_dir,clear_cache=clear_cache)
+prep_dirs(cache_dir,heatmap_csv_dir,edge_dir,output_dir,clear_cache=clear_cache)
 dates   = get_dates(sDate,eDate)
 
 # Cache All Results to a Pick File #############################################
@@ -96,6 +118,7 @@ else:
             output_dir = heatmap_csv_dir,
             region     = region,
             freq_str   = freq_str,
+            datasets   = datasets,
             csv_gen    = True,
             hist_gen   = True,
             geo_gen    = False,
@@ -119,7 +142,7 @@ else:
     for date in dates:
         tmp = {}
         tmp['date']           = date
-        tmp['cache_dir']      = cache_dir
+        tmp['cache_dir']      = edge_dir
         tmp['bandpass']       = bandpass
         tmp['auto_crit']      = automatic_lstid
         tmp['heatmaps']       = heatmaps
@@ -147,7 +170,7 @@ else:
         pickle.dump(all_results,fl)
 
 LSTID.plotting.plot_sin_fit_analysis(all_results,output_dir=output_dir)
-LSTID.plotting.plot_season_analysis(all_results,output_dir=output_dir)
+LSTID.plotting.sin_fit_key_params_to_csv(all_results,output_dir=output_dir)
 
 toc = datetime.datetime.now()
 print('Processing and plotting time: {!s}'.format(toc-tic))
