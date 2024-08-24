@@ -1,5 +1,5 @@
-# lstid_detection_hamSpots
-Code for automatically detecting LSTIDs from ham radio spot data
+# hamsci_LSTID_detection
+Code for automatically detecting Large Scale Traveling Ionospheric Disturbances (LSTIDs) from ham radio spot data.
 
 Developed by the HamSCI NASA SWO2R Team with major contributions by:
 * Nathaniel Frissell W2NAF
@@ -54,6 +54,7 @@ $$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
 
 ## 3. Skip Distance Edge-Detection
 Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+https://github.com/w2naf/lstid_detection_hamSpots/blob/hamsci_LSTID_detect/hamsci_LSTID_detect/edge_detection.py#L172-L208C1
 1. The x- and y- dimensions of the gridded array are trimmed by 8%.
 2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
 3.  
@@ -74,3 +75,6 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
         - `guess['offset_km']      = np.mean(data_detrend)`
         - `guess['slope_kmph']     = 0.`
      4. The fit with the highest $r^2$ value is selected as the best fit.
+  
+# Acknowledgments
+This work was supported by NASA Grants 80NSSC21K1772, 80NSSC23K0848 and United States National Science Foundation (NSF) Grant AGS-2045755.
