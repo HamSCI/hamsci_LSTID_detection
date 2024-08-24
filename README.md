@@ -1,5 +1,5 @@
-# lstid_detection_hamSpots
-Code for automatically detecting LSTIDs from ham radio spot data
+# hamsci_LSTID_detection
+Code for automatically detecting LSTIDs from ham radio spot data.
 
 Developed by the HamSCI NASA SWO2R Team with major contributions by:
 * Nathaniel Frissell W2NAF
