@@ -306,17 +306,7 @@ class HeatmapDateIter():
             xarr = create_xarr(data_dir,**kwargs)
 
         self.data = xarr
-#        self._apply_fn = apply_fn
         return
-    
-#    @property
-#    def apply_fn(self):
-#        return self._apply_fn
-#    
-#    @apply_fn.setter
-#    def apply_fn(self, x):
-#        self._apply_fn = x
-#        return
     
     def get_date(self, date, raise_missing=True):
         date = pd.to_datetime(date)
@@ -325,20 +315,8 @@ class HeatmapDateIter():
         except KeyError as ke:
             if raise_missing:
                 raise ke
-#            elif self.label_df is not None:
-#                return None, None
             else:
                 return
-        
-#        if self.apply_fn is not None:
-#            xarr = self.apply_fn(xarr)
-#
-#        if self.label_df is not None:
-#            try:
-#                label = self.label_df.loc[date,['xmin','xmax']]
-#            except KeyError:
-#                label = None
-#            return xarr, label
         else:
             return xarr
     
