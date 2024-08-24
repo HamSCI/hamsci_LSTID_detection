@@ -33,14 +33,68 @@ from data_loading import create_xarr, mad, create_label_df
 from utils import DateIter
 from threshold_edge_detection import lowess_smooth, measure_thresholds
 
-import Figure_3_stackplot as fig3
-import sme_plot
-import merra2CipsAirsTimeSeries
-sme     = sme_plot.SME_PLOT()
-
 parent_dir      = 'data_files'
 data_out_path   = 'processed_data/full_data.joblib'
 lstid_T_hr_lim  = (1, 4.5)
+
+def my_xticks(sDate,eDate,ax,radar_ax=False,labels=True,short_labels=False,
+                fmt='%d %b',fontdict=None,plot_axvline=True):
+    if fontdict is None:
+        fontdict = {'weight': 'bold', 'size':mpl.rcParams['ytick.labelsize']}
+    xticks      = []
+    xticklabels = []
+    curr_date   = sDate
+    while curr_date < eDate:
+        if radar_ax:
+            xpos    = get_x_coords(curr_date,sDate,eDate)
+        else:
+            xpos    = curr_date
+        xticks.append(xpos)
+        xticklabels.append('')
+        curr_date += datetime.timedelta(days=1)
+
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
+
+    # Define xtick label positions here.
+    # Days of month to produce a xtick label.
+    doms    = [1,15]
+
+    curr_date   = sDate
+    ytransaxes = mpl.transforms.blended_transform_factory(ax.transData,ax.transAxes)
+    while curr_date < eDate:
+        if curr_date.day in doms:
+            if radar_ax:
+                xpos    = get_x_coords(curr_date,sDate,eDate)
+            else:
+                xpos    = curr_date
+
+            if plot_axvline:
+                axvline = ax.axvline(xpos,-0.015,color='k')
+                axvline.set_clip_on(False)
+
+            if labels:
+                ypos    = -0.025
+                txt     = curr_date.strftime(fmt)
+                ax.text(xpos,ypos,txt,transform=ytransaxes,
+                        ha='left', va='top',rotation=0,
+                        fontdict=fontdict)
+            if short_labels:    
+                if curr_date.day == 1:
+                    ypos    = -0.030
+                    txt     = curr_date.strftime('%b %Y')
+                    ax.text(xpos,ypos,txt,transform=ytransaxes,
+                            ha='left', va='top',rotation=0,
+                            fontdict=fontdict)
+                    ax.axvline(xpos,lw=2,zorder=5000,color='0.6',ls='--')
+        curr_date += datetime.timedelta(days=1)
+
+    xmax    = (eDate - sDate).total_seconds() / (86400.)
+    if radar_ax:
+        ax.set_xlim(0,xmax)
+    else:
+        ax.set_xlim(sDate,sDate+datetime.timedelta(days=xmax))
+
 
 def mpl_style():
     plt.rcParams['font.size']           = 18
@@ -50,145 +104,6 @@ def mpl_style():
     plt.rcParams['axes.xmargin']        = 0
     plt.rcParams['axes.titlesize']      = 'x-large'
 mpl_style()
-
-class SuperDARNMSTID(object):
-    def __init__(self,param='meanSubIntSpect_by_rtiCnt',radars=None,
-                 season = '20181101_20190501',
-                output_dir='output',mstid_data_dir=None,
-                write_csvs=True,calculate_reduced=False,cache_file=None):
-
-        if mstid_data_dir is None:
-            mstid_data_dir = os.path.join('data','mongo_out','mstid_GSMR_fitexfilter_rtiThresh-0.25','guc')
-
-        if radars is None:
-            radars  = []
-            # 'High Latitude Radars'
-            radars.append('pgr')
-            radars.append('sas')
-            radars.append('kap')
-            radars.append('gbr')
-            # 'Mid Latitude Radars'
-            radars.append('cvw')
-            radars.append('cve')
-            radars.append('fhw')
-            radars.append('fhe')
-            radars.append('bks')
-            radars.append('wal')
-
-        # Load SuperDARN MSTID Index Data
-        if (cache_file is None) or (not os.path.exists(cache_file)):
-            po = fig3.ParameterObject(param,radars=radars,seasons=[season],
-                    output_dir=output_dir,default_data_dir=mstid_data_dir,
-                    calculate_reduced=calculate_reduced)
-
-        if cache_file is not None:
-            if not os.path.exists(cache_file):
-                with open(cache_file,'wb') as pkl:
-                    pickle.dump(po,pkl)
-            else:
-                print('Using Cached SD MSTID File: {!s}'.format(cache_file))
-                with open(cache_file,'rb') as pkl:
-                    po = pickle.load(pkl)
-
-        self.season         = season
-        self.param          = param
-        self.radars         = radars
-        self.mstid_data_dir = mstid_data_dir  
-        self.fig3           = fig3
-        self.po             = po # ParameterObject
-
-    def plot_ax(self,ax,sDate=None,eDate=None,xlabels=True):
-        """
-        Plot SuperDARN MSTID Index onto an axis.
-        """
-        if sDate is None:
-            spl = self.season.split('_')[0]
-            sDate   = datetime.datetime.strptime(spl,'%Y%m%d')
-
-        if eDate is None:
-            spl = self.season.split('_')[1]
-            eDate   = datetime.datetime.strptime(spl,'%Y%m%d')
-
-        data_df = self.po.data[self.season]['df']
-        ax_info = self.fig3.plot_mstid_values(data_df,ax,
-                    radars=self.radars,param=self.param,xlabels=xlabels,
-                    sDate=sDate,eDate=eDate,radarBox_fontsize='x-large',
-                  radar_ylabels=False)
-
-
-def load_df_mlw():
-    """
-    Load Mary Lou West's manual classification results into a datafram.
-
-    Apply an explicit classification rule to MLW's results:
-        1. TIDs must exist for more than 0 hours
-        2. LSTIDs should have periods between 1 and 5 hours.
-    """
-    import lstid_ham
-    lstid_mlw   = lstid_ham.LSTID_HAM()
-    df_mlw      = lstid_mlw.df.copy()
-    df_mlw      = df_mlw.set_index('date')
-    old_keys    = list(df_mlw.keys())
-    new_keys    = {x:'MLW_'+x for x in old_keys}
-    df_mlw      = df_mlw.rename(columns=new_keys)
-
-    # Explicitly classify MLW's results as LSTID or not.
-    crits   = []
-    # TIDs must exist for more than 0 hours
-    tf_tid_hrs          = df_mlw['MLW_tid_hours'].astype(float).fillna(0) > 0
-    crits.append(tf_tid_hrs)
-
-    # Additional criteria beyond duration.
-    mlw_lstid_criteria  = {}
-    mlw_lstid_criteria['MLW_period_hr'] = lstid_T_hr_lim    
-
-    for key, crit in mlw_lstid_criteria.items():
-        result  = np.logical_and(df_mlw[key] >= crit[0], df_mlw[key] < crit[1])
-        crits.append(result)
-
-    df_mlw['MLW_is_lstid'] = np.logical_and.reduce(crits)
-    return df_mlw,mlw_lstid_criteria
-
-#df_mlw, mlw_lstid_criteria  = load_df_mlw()
-
-def load_df_sql(sDate=datetime.datetime(2018,11,1), 
-                eDate=datetime.datetime(2019,4,30),
-                data_name='NAF'):
-    
-    import lstidFitDb
-    ldb  = lstidFitDb.LSTIDFitDb()
-    
-    dates = [sDate]
-    while dates[-1] < eDate:
-        dates.append(dates[-1]+datetime.timedelta(days=1))
-    
-    lst = []
-    inx = []
-    for date in dates:
-        p0, in_DB = ldb.get_fit(date)
-        if in_DB:
-            lst.append(p0)
-            inx.append(date)
-    
-    df = pd.DataFrame(lst,index=inx)
-    df['dur_hr'] = (df['eTime'] - df['sTime']).apply(lambda x: x.total_seconds()/3600.)
-
-    # Explicitly classify results as LSTID or not.
-    crits   = []
-    # TIDs must exist for more than 0 hours
-    tf_tid_hrs          = df['dur_hr'].astype(float).fillna(0) > 0
-    crits.append(tf_tid_hrs)
-
-    # Additional criteria beyond duration.
-    sql_lstid_criteria  = {}
-    sql_lstid_criteria['T_hr'] = lstid_T_hr_lim    
-
-    for key, crit in sql_lstid_criteria.items():
-        result  = np.logical_and(df[key] >= crit[0], df[key] < crit[1])
-        crits.append(result)
-
-    df[f'{data_name}_is_lstid'] = np.logical_and.reduce(crits)
-    return df,sql_lstid_criteria
 
 def fmt_xaxis(ax,xlim=None,label=True):
     ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=1))
@@ -805,7 +720,7 @@ def plot_sin_fit_analysis(all_results,
     eDate   = max(all_results.keys())
 
     sDate_str   = sDate.strftime('%Y%m%d')
-    eDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = eDate.strftime('%Y%m%d')
     png_fname   = '{!s}-{!s}_sinFitAnalysis.png'.format(sDate_str,eDate_str)
     png_fpath   = os.path.join(output_dir,png_fname)
 
@@ -849,7 +764,7 @@ def plot_sin_fit_analysis(all_results,
     df.to_csv(csv_fpath)
 
     # Plotting #############################
-    nrows   = 7
+    nrows   = 4
     ncols   = 1
     ax_inx  = 0
     axs     = []
@@ -858,47 +773,6 @@ def plot_sin_fit_analysis(all_results,
 
     figsize = (30,nrows*6.5)
     fig     = plt.figure(figsize=figsize)
-
-    # ax with SuperDARN MSTID Index ################################################
-    ax_inx  += 1
-    ax      = fig.add_subplot(nrows,ncols,ax_inx)
-    axs.append(ax)
-    sd_cache    = os.path.join(cache_dir,'sd_mstid.pkl')
-    sd_mstid = SuperDARNMSTID(cache_file=sd_cache)
-    sd_mstid.plot_ax(ax,sDate=sDate,eDate=eDate,xlabels=(ax_inx==nrows))
-    ltr = '({!s}) '.format(letters[ax_inx-1])
-    ax.set_title(ltr+'North American SuperDARN Daytime MSTID Index',loc='left')
-    ax.set_title('')
-
-    # ax with MERRA2 ###############################################################
-    ax_inx  += 1
-    ax      = fig.add_subplot(nrows,ncols,ax_inx)
-    axs.append(ax)
-    ax_0            = ax
-
-    prmd = {}
-    prmd['scale_0']         = -20
-    prmd['scale_1']         = 100
-    prmd['levels']          = 11
-    prmd['cmap']            = 'jet'
-
-    mca     = merra2CipsAirsTimeSeries.Merra2CipsAirsTS()
-    result  = mca.plot_ax(ax,ylabel_fontdict=ylabel_fontdict,plot_cbar=False,**prmd)
-    ltr = '({!s}) '.format(letters[ax_inx-1])
-    ax.set_title(ltr+'MERRA-2 50\N{DEGREE SIGN} N Lat Zonal Winds + CIPS & AIRS GW Variance',loc='left')
-    fig3.my_xticks(sDate,eDate,ax,fmt='%d %b',plot_axvline=False)
-    ax.set_xlabel('')
-
-    # December 25, 2018
-    line_lw  = 8
-    line_color = 'black'
-    ax.axvline(datetime.datetime(2018,12,25),lw=line_lw,color=line_color,label='25 Dec 2018')
-    ax.axvline(datetime.datetime(2019,1,2),lw=line_lw,color=line_color,label='2 Jan 2019')
-
-    cbar_info[ax_inx] = cbd = {}
-    cbd['ax']       = ax
-    cbd['label']    = 'MERRA-2 Zonal Wind\n[m/s]'
-    cbd['mpbl']     = result['cbar_pcoll']
 
     # ax with LSTID Amplitude Analysis #############################################
     prmds   = {}
@@ -947,17 +821,8 @@ def plot_sin_fit_analysis(all_results,
         ax.scatter(xx,yy,marker='o',c=color)
         ax.legend(loc='upper right',ncols=2)
 
-#        # December 25, 2018
-#        line_lw  = 8
-#        line_color = 'black'
-#        ax.axvline(datetime.datetime(2018,12,25),lw=line_lw,color=line_color,label='25 Dec 2018')
-#        ax.axvline(datetime.datetime(2019,1,2),lw=line_lw,color=line_color,label='2 Jan 2019')
-
-
         trans           = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
         hndl            = ax.bar(xx,1,width=1,color=color,align='edge',zorder=-1,transform=trans,alpha=0.5)
-
-
 
         cbar_info[ax_inx] = cbd = {}
         cbd['ax']       = ax
@@ -965,31 +830,9 @@ def plot_sin_fit_analysis(all_results,
         cbd['mpbl']     = mpbl
 
         ax.set_ylabel(label,fontdict=ylabel_fontdict)
-        fig3.my_xticks(sDate,eDate,ax,fmt='%d %b')
+        my_xticks(sDate,eDate,ax,fmt='%d %b')
         ltr = '({!s}) '.format(letters[ax_inx-1])
         ax.set_title(ltr+title, loc='left')
-
-#        ax2 = ax.twinx()
-#        tf  = np.logical_and(sme.df.index >= sDate, sme.df.index < eDate)
-#        sme_df  = sme.df[tf].copy()
-#
-#        xx  = sme_df.index
-#        yy  = sme_df['SME'].rolling(int(24*60),center=True).mean()
-#        ax2.plot(xx,yy,color='0.5')
-#        ax2.set_ylabel('SME [nT]')
-#        ax2.grid(False)
-
-    ################################################################################
-    ax_inx  += 1
-    ax      = fig.add_subplot(nrows,ncols,ax_inx)
-    axs.append(ax)
-
-    result  = sme.plot_ax(ax,xlim=(sDate,eDate),ylabel_fontdict=ylabel_fontdict)
-    fig3.my_xticks(sDate,eDate,ax)
-    ltr = '({!s}) '.format(letters[ax_inx-1])
-    ax.set_title(ltr+'SuperMAG SME Index',loc='left')
-    ax.set_title('')
-    ax.set_xlabel('')
 
     # ax with LSTID T_hr Fitting Analysis ##########################################    
     ax_inx  += 1
@@ -1015,45 +858,14 @@ def plot_sin_fit_analysis(all_results,
     cbd['label']    = 'T_hr Guess'
     cbd['mpbl']     = mpbl
 
-#    # Plot bars for days that meet LSTID criteria.
-#    trans   = mpl.transforms.blended_transform_factory( ax.transData, ax.transAxes)
-##    tf      = np.logical_and(df.selected,df.is_lstid)
-##    hndl    = ax.bar(df.index[tf],1,width=1,color='0.8',align='edge',
-##                     label='Meets LSTID Criteria',alpha=0.5,zorder=-1,transform=trans)
-#
-#    best_fit_T_hr_min    = 3.
-#    tf      = np.logical_and(df.selected,df.T_hr > best_fit_T_hr_min)
-#    hndl    = ax.bar(df.index[tf],1,width=1,color='0.8',align='edge',
-#                     label='Best Fit T_hr > {!s}'.format(best_fit_T_hr_min),alpha=0.5,zorder=-1,transform=trans)
-
     ax.legend(loc='upper right')
     ax.set_ylim(0,10)
     ax.set_ylabel('T_hr Fit')
-    fig3.my_xticks(sDate,eDate,ax,labels=(ax_inx==nrows))
-
-#    # ax with Plot Information #####################################################
-#    ax_inx  += 1
-#    ax      = fig.add_subplot(nrows,ncols,ax_inx)
-#    axs.append(ax)
-#    ax.grid(False)
-#    for xtl in ax.get_xticklabels():
-#        xtl.set_visible(False)
-#    for ytl in ax.get_yticklabels():
-#        ytl.set_visible(False)
-#    fontdict = {'weight':'normal','family':'monospace'}
-#
-##    lstid_criteria  = all_results[sDate]['metaData']['lstid_criteria']
-##    txt = []
-##    txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
-##    for key, val in lstid_criteria.items():
-##        txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-##    ax.text(0.05,0.45,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})
+    my_xticks(sDate,eDate,ax,labels=(ax_inx==nrows))
 
     fig.tight_layout()
 
 #    # Account for colorbars and line up all axes.
-#    for ax_inx, ax in enumerate(axs):
-#        adjust_axes(ax,ax_0)
     for ax_inx, cbd in cbar_info.items():
         ax_pos      = cbd['ax'].get_position()
                     # [left, bottom,       width, height]
@@ -1095,10 +907,10 @@ if __name__ == '__main__':
     multiproc                 = True
     output_dir                = 'output'
     cache_dir                 = 'cache'
-    clear_cache               = True
+    clear_cache               = False
     bandpass                  = True
     automatic_lstid           = True
-    raw_data_loader           = True
+    raw_data_loader           = False
 
     sDate   = datetime.datetime(2018,11,1)
     eDate   = datetime.datetime(2019,4,30)
