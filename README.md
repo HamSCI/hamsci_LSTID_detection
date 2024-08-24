@@ -51,3 +51,8 @@ Gridded array re-scaling is handled by `LSTID.data_loading.create_xarr()`.
 1. Data array is trimmed so that only daylight hours in North America are used (1200-2359 UTC).
 2. A scaled version $M_{ad}$ of the gridded array $A$ is computed by `LSTID.data_loading.mad()` as follows:
 $$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
+
+## 3. Skip Distance Edge-Detection
+
+## 4. Sin-Fitting
+
