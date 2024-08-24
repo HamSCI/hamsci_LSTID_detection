@@ -46,7 +46,8 @@ Data Loading and Gridding is handled by `LSTID.data_loading.RawSpotProcessor()`.
     4. 0 km < R_gc < 3000 km
 3. Filtered data is gridded into 10 km range by 1 minute bins.
 
-## 2. Heatmap Re-scaling, Smoothing, and Thresholding
-Heatmap Re-scaling, Smoothing, and Thresholding is handled by `LSTID.data_loading.create_xarr()`.
+## 2. Gridded Array Re-scaling, Smoothing, and Thresholding
+Gridded Array Re-scaling, Smoothing, and Thresholding is handled by `LSTID.data_loading.create_xarr()`.
 1. Data array is trimmed so that only daylight hours in North America are used (1200-2359 UTC).
-2. 
+2. A scaled version $M_{ad}$ of the gridded array $A$ is computed by `LSTID.data_loading.mad()` as follows:
+$$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
