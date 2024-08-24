@@ -20,8 +20,9 @@ def prep_dirs(*dirs,clear_cache=False):
         if clear_cache and os.path.exists(dr):
             shutil.rmtree(dr)
 
+    for dr in dirs:
         if not os.path.exists(dr):
-            os.mkdir(dr)
+            os.makedirs(dr)
 
 def get_dates(sDate,eDate):
     """
@@ -34,9 +35,9 @@ def get_dates(sDate,eDate):
     return dates
 
 raw_processing_input_dir = 'raw_data'
-heatmap_csv_dir          = 'data_files'
-output_dir               = 'output'
 cache_dir                = 'cache'
+heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
+output_dir               = 'output'
 clear_cache              = True
 
 lstid_T_hr_lim           = (1, 4.5)
@@ -94,9 +95,8 @@ else:
         with multiprocessing.Pool(nprocs) as pool:
             pool.map(LSTID.data_loading.runRawProcessing,rawProcDicts)
     
-    # Load in CSV Histograms ###############
-    full_xarr = LSTID.data_loading.create_xarr(heatmap_csv_dir)
-    date_iter = LSTID.data_loading.DateIter(full_xarr)
+    # Load in CSV Histograms/Heatmaps ###############
+    heatmaps    = LSTID.data_loading.HeatmapDateIter(heatmap_csv_dir)
     import ipdb; ipdb.set_trace()
 
     # Edge Detection, Curve Fitting, and Plotting ##########

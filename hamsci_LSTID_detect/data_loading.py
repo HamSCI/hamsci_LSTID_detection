@@ -297,24 +297,30 @@ class RawSpotProcessor:
 # Nick Callahan's Code for Loading Preprocessed Heatmaps #######################
 ################################################################################
 
-class DateIter():
-    def __init__(self, xarr, apply_fn=None):
+class HeatmapDateIter():
+    """
+    Class to make it easier to access amateur radio timeseries
+    heatmaps by date.
+    """
+    def __init__(self,data_dir='data_files',xarr=None,**kwargs):# apply_fn=None):
+        if data_dir is not None:
+            xarr = create_xarr(data_dir,**kwargs)
+
         self.data = xarr
-        self._apply_fn = apply_fn
+#        self._apply_fn = apply_fn
         return
     
-    @property
-    def apply_fn(self):
-        return self._apply_fn
-    
-    @apply_fn.setter
-    def apply_fn(self, x):
-        self._apply_fn = x
-        return
+#    @property
+#    def apply_fn(self):
+#        return self._apply_fn
+#    
+#    @apply_fn.setter
+#    def apply_fn(self, x):
+#        self._apply_fn = x
+#        return
     
     def get_date(self, date, raise_missing=True):
         date = pd.to_datetime(date)
-#         arr = self.data[date,:,:]
         try:
             xarr = self.data.sel(date=date)
         except KeyError as ke:
@@ -356,12 +362,6 @@ class DateIter():
     def iter_all(self):
         return self.iter_dates(self.data.indexes['date'])
     
-    def iter_labels(self):
-        if self.label_df is None:
-            raise AttributeError('No labels assigned, cannot iter by nonexistent `label_df`')
-        dates = self.label_df.index[self.label_df.index.isin(self.data.indexes['date'])]
-        return self.iter_dates(dates)
-
 def pad_axis(arr, expected_size, dtype=np.uint8, axis=0):
     shape_mismatch = expected_size - arr.shape[axis]
     left_pad = shape_mismatch // 2
