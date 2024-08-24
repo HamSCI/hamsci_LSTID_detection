@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
-import seaborn as sns
 import matplotlib.pyplot as plt
 import scipy.stats as st
 
@@ -102,8 +101,6 @@ def create_xarr(
         img_list.append((date.to_pydatetime(), img))
         
     dates, imgs = zip(*img_list)
-    # start_time = datetime.datetime.utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
-    # times = [start_time + datetime.timedelta(minutes=i) for i in range(expected_shape[0])]
     times = pd.timedelta_range(start='12:00:00', end='23:59:00', freq='1min')
     heights = np.arange(height_start, 10 * expected_shape[1], 10)
 
@@ -124,37 +121,6 @@ def create_xarr(
 
 def str_to_float_col(x):
     return x.astype(str).str.strip().replace('',0).astype(np.float32)
-
-def create_label_df(csv_path='official_labels.csv'):
-    official_df = pd.read_csv(csv_path)
-    
-    index = pd.to_datetime(official_df['Date'].str.strip(), format='%m/%d/%Y')
-    index.name = 'date'
-    label_df = pd.DataFrame(
-        {
-            'binary_label' : ~(official_df['Start time'] == 0),
-            'xmin' : str_to_float_col(official_df['Start time']).sub(12).multiply(60),
-            'xmax' : str_to_float_col(official_df['End time']).sub(12).multiply(60),
-            'ymin' : str_to_float_col(official_df['Low range']).div(10),
-            'ymax' : str_to_float_col(official_df['High range']).div(10),
-            'period' : str_to_float_col(official_df['Period']).multiply(60),            
-        },
-        index=index,
-    )
-    return label_df
-
-# def quantile_normalize(t):
-#     assert t.shape[0] > t.shape[1] and t.shape[1] > t.shape[2], t.shape
-#     flat_t = t.reshape(t.shape[0], -1)
-#     flat_t = st.rankdata(flat_t, method='dense', axis=1) #, nan_policy='raise')
-    
-#     quantiles = ranks / len(chunk)
-
-#     # Apply inverse cumulative distribution function to get normalized values
-#     normalized_values = np.percentile(chunk, quantiles * 100)
-    
-#     t = flat_t.reshape(t.shape)
-#     return t
 
 def mad(t, min_dev=.05):
     median = np.median(t, axis=(0, 1), keepdims=True)
