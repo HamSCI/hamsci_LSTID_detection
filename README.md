@@ -3,7 +3,7 @@ Code for automatically detecting Large Scale Traveling Ionospheric Disturbances 
 
 Developed by the HamSCI NASA SWO2R Team with major contributions by:
 * Nathaniel Frissell W2NAF
-* Nichsolas Callahan
+* Nicholas Callahan
 * Diego Sanchez KD2RLM
 * Bill Engelke AB4EJ
 * Mary Lou West KC2NMC
