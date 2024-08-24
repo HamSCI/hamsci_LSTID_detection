@@ -75,3 +75,6 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
         - `guess['offset_km']      = np.mean(data_detrend)`
         - `guess['slope_kmph']     = 0.`
      4. The fit with the highest $r^2$ value is selected as the best fit.
+  
+# Acknowledgments
+This work was supported by NASA Grants 80NSSC21K1772, 80NSSC23K0848 and United States National Science Foundation (NSF) Grant AGS-2045755.
