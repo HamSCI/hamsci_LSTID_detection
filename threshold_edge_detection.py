@@ -1,15 +1,7 @@
-# import math
-# import matplotlib.pyplot as plt
-# import seaborn as sns
 import numpy as np
 import statsmodels.api as sm
-# import pandas as pd
-
 from scipy.interpolate import CubicSpline
-# from scipy.ndimage import gaussian_filter
 from scipy import signal
-# from utils import DateIter
-# from IPython.display import clear_output
 
 def occurrence_max(arr, n, equal=False):
     ## change this to be two sided
