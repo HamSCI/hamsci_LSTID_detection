@@ -68,7 +68,7 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
 5. A $1 < T < 5$ hr bandpass filter is applied to the detrended edge.
 6. This filtered, detrended result is curve-fit to $$A\sin(2\pi ft+\phi) + mt +b$$ to determine the LSTID amplitude $A$ and period $T=1/f$.
      1. `scipy.optimize.curve_fit()` is used as the curve fitter.
-     2. The curve fit routine is run for each of the follwing intital period guesses: $T_{hr} = [1,1.5,2,2.5,3,3.5,4].
+     2. The curve fit routine is run for each of the follwing intital period guesses: $T_{hr}$ = [1,1.5,2,2.5,3,3.5,4].
      3. Other parameter initial guesses are as follows:
         - `guess['amplitude_km']   = np.ptp(data_detrend)/2.`
         - `guess['phase_hr']       = 0.`
