@@ -255,7 +255,7 @@ def sin_fit_key_params_to_csv(all_results,output_dir='output'):
     eDate   = max(all_results.keys())
 
     sDate_str   = sDate.strftime('%Y%m%d')
-    eDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = eDate.strftime('%Y%m%d')
 
     # Create parameter dataframe.
     params = []
@@ -327,18 +327,29 @@ def plot_sin_fit_analysis(all_results,
                     tmp[param] = p0_sin_fit.get(param,False)
                 else:
                     tmp[param] = p0_sin_fit.get(param,np.nan)
+            
+            # Get the start and end times of the good fit period.
+            fitWinLim   =  results['metaData']['fitWinLim']
+            tmp['fitStart'] = fitWinLim[0]
+            tmp['fitEnd']   = fitWinLim[1]
 
             df_lst.append(tmp)
             df_inx.append(date)
 
-    df          = pd.DataFrame(df_lst,index=df_inx)
-    df_sel      = df[df.selected].copy() # Data frame with fits that have been selected as good.
+    df                = pd.DataFrame(df_lst,index = df_inx)
+    # Calculate the duration in hours of the good fit period.
+    df['duration_hr'] = (df['fitEnd'] - df['fitStart']).apply(lambda x: x.total_seconds()/3600.)
+    df_sel            = df[df.selected].copy() # Data frame with fits that have been selected as good.
 
     sDate_str   = sDate.strftime('%Y%m%d')
-    eDate_str   = sDate.strftime('%Y%m%d')
+    eDate_str   = eDate.strftime('%Y%m%d')
     csv_fname   = '{!s}-{!s}_allSinFits.csv'.format(sDate_str,eDate_str)
     csv_fpath   = os.path.join(output_dir,csv_fname)
     df.to_csv(csv_fpath)
+
+    csv_fname   = '{!s}-{!s}_selectedSinFits.csv'.format(sDate_str,eDate_str)
+    csv_fpath   = os.path.join(output_dir,csv_fname)
+    df_sel.to_csv(csv_fpath)
 
     # Plotting #############################
     nrows   = 4
