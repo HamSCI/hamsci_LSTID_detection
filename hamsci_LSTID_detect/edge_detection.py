@@ -21,32 +21,127 @@ from scipy.optimize import curve_fit
 # Nick's Edge Detection Code ###################################################
 ################################################################################
 
-def occurrence_max(arr, n, equal=False):
-    ## change this to be two sided
-    hist, bins = np.histogram(arr, bins=np.arange(np.min(arr), np.max(arr) + 2))
+def occurrence_max(arr, n):
+    """
+    Selects the maximum value, excluding upper outliers, from the image array
+    to provide a more consistent thresholding range
+
+    Args:
+    arr : `np.ndarray`
+    - preprocessed input image
+    - only tested with integer dtype
+
+    n : `int`
+    - number of upper (preprocessed) pixel values to exclude
+    - the cumulative sum of the histogram (starting from the top side)
+    is trimmed to this value when returning the maximum
+
+    Returns:
+    max_value : `int`
+    - maximum value in `arr` after outliers
+    """
+    hist, bins = np.histogram(
+        arr, 
+        bins=np.arange(np.min(arr), np.max(arr) + 2)
+    )
     bins = bins[1:]
 
-    if equal:
-        bin_mask = np.where(hist >= n)
-    else:
-        hist, bins = hist[::-1], bins[::-1]
-        hist = np.cumsum(hist)
-        bin_mask = hist >= n
+    hist, bins = hist[::-1], bins[::-1]
+    hist = np.cumsum(hist)
+    bin_mask = hist >= n
 
     max_value = np.max(bins[bin_mask])
     return max_value
 
 def rescale_to_int(arr, occurrence_n=100, i_max=30):
-    assert i_max < 255, i_max
+    """
+    Rescales the preprocessed image array, which can be of a float dtype due
+    to effects such as blurring, back into a formatted integer range
+
+    This effectively determines the available thresholds, the minimum being
+    zero and the maximum being near `i_max`, although there can be some deviation
+    due to outlier effects
+
+    Args:
+    arr : `np.ndarray`
+    - preprocessed input image
+    - only tested with integer dtype
+
+    Kwargs:
+    occurence_n : `int`
+    - upper number of pixels for thresholding
+    - see function `occurence_max`'s argument `n`
+
+    i_max : `int`
+    - effective number of integer thresholds in output array
+    - must be less than 255, as output is expected to have np.uint8 dtype
+    
+    Returns:
+    arr : `np.ndarray`
+    - rescaled `arr`
+    """
+    if i_max > 2**8 - 1:
+        raise ValueError(
+            f'`i_max` must be in 8bit unsigned integer range, not {i_max}'
+        )
+    if (arr_max := np.amax(arr.ravel())) > 2**16 - 1:
+        raise ValueError(
+            'All values in `arr` must be in 16bit unsigned integer range'
+            + f' not {arr_max}'
+        )
 
     arr = arr - np.amin(arr)
     max_val = occurrence_max(arr.round().astype(np.uint16), occurrence_n)
     factor = i_max / max_val
     arr = arr * factor
+    if (arr_max := np.amax(arr.ravel())) > 2**8 - 1:
+        raise ValueError(
+            f'End rescaling max {arr_max} out of range of uint8 range'
+            + ', considering adding explicit upper clipping'
+        )
     arr = arr.round().astype(np.uint8)
     return arr
 
-def stack_all_thresholds(arr, select_min=True, exact_thresh=False, axis=0, **rescale_kwargs):
+def stack_all_thresholds(
+    arr, 
+    select_min=True, 
+    exact_thresh=False, 
+    axis=0, 
+    **rescale_kwargs,
+):
+    """
+    Converts preprocessed array to integers and calculates all 
+    thresholds, them combines the thresholds into a single edge
+
+    Args:
+    arr : `np.ndarray`
+    - preprocessed input image
+    - can be float or int dtype
+
+    Kwargs:
+    select_min : `bool`
+    - chooses to select the minimum edge or maximum edge for each
+    threshold
+    - preprocessing system is tuned for selecting the minimum edge
+    at the time of writing
+
+    exact_thresh : `bool`
+    - whether to select all pixels gte the threshold or just equal to
+    - setting to False should provide smoother results, but the same
+    index values may be selected multiple times across thresholds
+
+    axis : `int`
+    - numpy dimension for selection, should be 0 unless the 
+    preprocessing routine changes
+
+    Kwargs:
+    rescale_kwargs : `dict`
+    - kwargs sent into the rescaling function `rescale_to_int`
+
+    Returns:
+    thresh_edge_arr : `np.ndarray`
+    - 2D stack of individual threshold arrays
+    """
     arr = rescale_to_int(arr, **rescale_kwargs)
 
     thresholds = np.unique(arr)
@@ -60,13 +155,45 @@ def stack_all_thresholds(arr, select_min=True, exact_thresh=False, axis=0, **res
         idx_fn = np.argmin if select_min else np.argmax
         thresh_edge = idx_fn(thresh_mask.astype(np.uint8), axis=axis, keepdims=True)
             
-        assert max(thresh_edge.shape) == max(arr.shape), f'{thresh_edge.shape} | {arr.shape}'
+        if max(thresh_edge.shape) != max(arr.shape):
+            raise ValueError(
+                f'Expected largest dim in `thresh_edge` (shape {thresh_edge.shape})'
+                + f'to match largest dim for `arr` (shape {arr.shape})'
+            )
         
         thresh_edges.append(thresh_edge)
     thresh_edge_arr = np.concatenate(thresh_edges, axis=axis)
     return thresh_edge_arr
 
 def lowess_smooth(arr, window_size=10, x=None):
+    """
+    LOWESS smoothing function, short wrapper around the
+    statsmodels.parametric `lowess` function
+
+    Args:
+    arr : `np.ndarray`
+    - 1D threshold from input image
+
+    Kwargs:
+    window_size : `int`
+    - size of the window, in native array units, to apply the 
+    LOWESS window over
+    - converted to a fraction of the array for compatibility 
+    with statsmodels
+
+    x : `np.ndarray` or None
+    - if not None, it must be a 1D array
+    matching the length of `arr`
+    - if None, `x` will be set as an evenly spaced array matching
+    the size of `arr`
+    - `x` can be passed for efficiency (not recreating the array)
+    or when `arr` does not have all represented indices evenly
+    spaced
+
+    Returns:
+    z : `np.ndarray`
+    - LOWESS smoothed `arr`
+    """
     if x is None:
         x = np.linspace(0, len(arr), len(arr))
     frac = window_size/len(arr)
@@ -74,37 +201,151 @@ def lowess_smooth(arr, window_size=10, x=None):
     return z
 
 def smooth_remove_abs_deviation(arr, smooth_fn, max_abs_dev=20):
+    """
+    Smooths an array, calculates deviation from the smoothed array
+    vs the original, filters out points of high deviation, and
+    fills the high deviation points with interpolated values
+
+    Args:
+    arr : `np.ndarray`
+    - 1D threshold from input image
+
+    smooth_fn : `Callable`
+    - smoothing function that takes only `arr` as a single argument
+    
+    Kwargs:
+    max_abs_dev : `int`
+    - maximum absolute deviation between the passed array and the
+    smoothed counterpart before points get filtered
+
+    Returns:
+    z : `np.ndarray`
+    - smoothed, filtered and interpolated version of `arr`
+    """
     x = np.arange(0, arr.shape[0], 1)
     z = smooth_fn(arr)
-    assert len(x) == len(arr)
-    assert len(z) == len(x)
+    if len(x) != len(arr) or len(z) != len(x):
+        raise ValueError(
+            'Expected lengths of `arr`, `x`, and `z` to match : '
+            + f'{len(arr)}, {len(x)}, {len(z)}'
+        )
     dev_mask = np.abs(arr - z) < max_abs_dev
     interp = CubicSpline(x[dev_mask], z[dev_mask])
     z = interp(x)
     return z
 
 def select_min_deviation(arrs, smooth_fn, max_abs_dev=20):
-    min_arr = None
+    """
+    Selects a single edge array amongst multiple edge arrays, based
+    on which array has the least standard deviation between the
+    original array and the smoothed, filtered and interpolated 
+    counterpart
+
+    Args:
+    arrs : `List[np.ndarray]`
+    - list full of 1D edge arrays
+    - for duck typing, can be any iterable or numpy array where
+    simple iteration yields 1D edge arrays
+
+    smooth_fn : `Callable`
+    - function for smoothing each array in `arrs`
+    - passed to `smooth_remove_abs_deviation`
+
+    Kwargs:
+    max_abs_dev : `int`
+    - maximum absolute deviation for filtering a point in each arr
+    in `arrs`
+    - passed to `smooth_remove_abs_deviation`
+
+    Returns:
+    min_arrs : `Tuple[np.ndarray]`
+    - tuple containing the selected arr from arrs as well as the
+    smoothed, filtered and interpolated version of arr
+    """
+    min_arrs = None
     min_dev = np.inf
     for arr in arrs:
         z = smooth_remove_abs_deviation(arr, smooth_fn, max_abs_dev=max_abs_dev)
         dev = np.std(arr - z)
-        if min_arr is None or dev < min_dev:
-            min_arr = (arr, z)
+        if min_arrs is None or dev < min_dev:
+            min_arrs = (arr, z)
             min_dev = dev
-    return min_arr
+    return min_arrs
+
+def take_quantile(thresh_arr, q):
+    """
+    Selects a single quantile from an array. Simple wrapper for
+    `np.nanquantile` to clarify expected value of `q`
+
+    Args:
+    thresh_arr : `np.ndarray`
+    - 2D stack of thresholds from an image
+
+    q : `float` or `List[float]`
+    - quantile to select from a passed distribution
+    - passed to `np.nanquantile`
+
+    Returns:
+    line : `np.ndarray`
+    - single edge from combined threshold arrays
+    """
+    if not isinstance(q, float):
+        raise TypeError(
+            f'Expected float for `q`, recieved {type(q)}'
+        )
+    if 0 >= q >= 1:
+        raise ValueError(
+            f'Expected `q` to be between 0 and 1, noninclusive, not {q}'
+        )
+    
+    line = np.nanquantile(thresh_arr, q, axis=0)
+    return line
 
 def measure_thresholds(arr, qs=.8, lower_cutoff=10, **threshold_kwargs):
+    """
+    Calculates multiple thresholds, stacks them together, filters some
+    values based on y axis cutoff, then selects a single value for
+    each column from the remaining threshold distribution for each
+    column
+
+    Args:
+    arr : `np.ndarray`
+    - 2D input image to detect edge from
+    - passed directly to `stack_all_thresholds`
+
+    Kwargs:
+    qs : `float` or `Iterable[float]`
+    - quantile(s) to take from stacked thresholds
+    - each q is passed to `take_quantile`
+
+    lower_cutoff : `int`
+    - minimum y axis value for which detected thresholds will allowed
+    - anything lower than this is set to `np.nan` and implicitly
+    removed when the column-wise quantile is taken
+
+    threshold_kwargs : `dict`
+    - keyword arguments passed to `stack_all_thresholds`
+
+    Returns:
+    med_lines : `List[np.ndarray]`
+    - detected edges for each passed quantile value
+
+    min_line : `np.ndarray`
+    - single line from `med_lines` selected by `select_min_deviation`
+
+    minz_line : `np.ndarray`
+    - smoothed version of `min_line`
+    """
     thresh_edge_arr = stack_all_thresholds(arr, **threshold_kwargs)
     
     thresh_edge_arr = thresh_edge_arr.astype(np.float32)
     thresh_edge_arr[thresh_edge_arr < lower_cutoff] = np.nan   
     
-    # Make sure qs is iterable.
+    # qs must be an iterable of floats
     if isinstance(qs, float):
         qs = [qs]
 
-    med_lines = [np.nanquantile(thresh_edge_arr, q, axis=0) for q in qs]
+    med_lines = [take_quantile(thresh_edge_arr, q) for q in qs]
     min_line, minz_line = select_min_deviation(med_lines, lowess_smooth)
     
     return med_lines, min_line, minz_line
