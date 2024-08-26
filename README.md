@@ -57,7 +57,15 @@ Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.r
 https://github.com/w2naf/lstid_detection_hamSpots/blob/hamsci_LSTID_detect/hamsci_LSTID_detect/edge_detection.py#L172-L208C1
 1. The x- and y- dimensions of the gridded array are trimmed by 8%.
 2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
-3.  
+3. The gridded array has the minimum subtracted from the array so the lower bound is 0.
+4. A maximum of the gridded array, excluding upper outliers, is taken by selecting the value of the `occurence_max=60`th pixel's largest value.
+5. The gridded array is rescaled by the maximum and `i_max=30` values so that the outlier adjusted maximum is rescaled to 30, and all float values are rounded to integers, so the array consists of approximately 30 discrete thresholds.
+6. For each unique value in the integer array, a lower threshold line is calculated by taking the index of the lowest point in each column such that the value at that point is greater than the threshold.
+7. All thresholds for the integer array are stacked vertically, and threshold values below a specified y location are set to `np.nan`.
+8. Columnwise, for each value `q` in `qs=[.4,.5,.6]`, a scalar value is selected to represent the column as the detected edge by selecting the `q`th quantile value with nans ignored.
+9. Using the edges for each value in `[.4,.5,.6]`, each edge has outlier points removed, where any point that deviates more than `max_abs_dev=20` vertical pixels from the smoothed edge is interpolated with `scipy.interpolate.CubicSpline`.
+10. After outlier removal, the edge with the lowest standard deviation against the smoothed and interpolated version of the edge is returned as `min_line` and `minz_line`, in the original and smoothed form respectively.
+11. `min_line` is returned as the raw detected edge for the image, along with the unselected edges corresponding to the `qs`, and the `minz_line` for comparison.
 
 ## 4. Sine Fitting
 A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
