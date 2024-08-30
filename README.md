@@ -72,7 +72,7 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
 2. The largest contiguous time period between 1330 and 2230 UTC where $CV < 0.5$ is selected as "good".
 3. A 2nd-degree polynomial is fit to the good period.
 4. The raw detected edge within this time period is detrended using a least-squares best-fit second degree polynomial.
-5. A $1 < T < 5$ hr bandpass filter is applied to the detrended edge.
+5. A $1 < T < 4.5$ hr bandpass filter is applied to the detrended edge.
 6. This filtered, detrended result is curve-fit to $$A\sin(2\pi ft+\phi) + mt +b$$ to determine the LSTID amplitude $A$ and period $T=1/f$.
      1. `scipy.optimize.curve_fit()` is used as the curve fitter.
      2. The curve fit routine is run for each of the follwing intital period guesses: $T_{hr}$ = [1,1.5,2,2.5,3,3.5,4].
