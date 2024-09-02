@@ -1,4 +1,5 @@
 # hamsci_LSTID_detection
+[![DOI](https://zenodo.org/badge/847098909.svg)](https://zenodo.org/doi/10.5281/zenodo.13630866)
 Code for automatically detecting Large Scale Traveling Ionospheric Disturbances (LSTIDs) from ham radio spot data.
 
 Developed by the HamSCI NASA Space Weather Operations to Research (SWO2R) Team with major contributions by:
