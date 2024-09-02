@@ -424,6 +424,9 @@ def run_edge_detect(
     bandpass        = True,
     lstid_T_hr_lim  = (1, 4.5),
     lstid_criteria  = {},
+    datasets        = None,
+    region          = None,
+    freq_str        = None,
     **kwArgs):
     """
     bandpass:   Apply a bandpass filter after detrending but before sin fitting.
@@ -684,16 +687,19 @@ def run_edge_detect(
     result['all_sin_fits']      = all_sin_fits
 
     result['metaData']          = meta  = {}
-    meta['date']                = date
-    meta['x_trim']              = x_trim
-    meta['y_trim']              = y_trim
-    meta['sigma']               = sigma
-    meta['qs']                  = qs
-    meta['occurence_n']         = occurence_n
-    meta['i_max']               = i_max
-    meta['xlim']                = xlim
-    meta['winlim']              = winlim
-    meta['fitWinLim']           = fitWinLim
-    meta['lstid_criteria']      = lstid_criteria
+    meta['date']           = date
+    meta['x_trim']         = x_trim
+    meta['y_trim']         = y_trim
+    meta['sigma']          = sigma
+    meta['qs']             = qs
+    meta['occurence_n']    = occurence_n
+    meta['i_max']          = i_max
+    meta['xlim']           = xlim
+    meta['winlim']         = winlim
+    meta['fitWinLim']      = fitWinLim
+    meta['lstid_criteria'] = lstid_criteria
+    meta['datasets']       = datasets
+    meta['region']         = region
+    meta['freq_str']       = freq_str
 
     return result

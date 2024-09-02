@@ -141,7 +141,7 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
         axs.append(ax)
 
         mpbl = ax.pcolormesh(arr_times,ranges_km,arr,cmap='plasma')
-        plt.colorbar(mpbl,aspect=10,pad=cb_pad,label='14 MHz Ham Radio Data')
+        plt.colorbar(mpbl,aspect=10,pad=cb_pad,label='Scaled Amateur Radio Data')
         if not plot_fit:
             ax.set_title(f'| {date} |')
         else:
@@ -227,6 +227,31 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
         results['sin_is_lstid']  = {'msg':'Auto', 'classification': p0_sin_fit.get('is_lstid')}
 
     fig.tight_layout()
+
+    # Add panel labels.
+    for ax_inx, ax in enumerate(axs):
+        lbl = '({!s})'.format(letters[ax_inx])
+        ax.set_title(lbl,loc='left')
+
+    # Add meta data about data sources.
+    meta = result_dct['metaData']
+    meta_title = []
+    freq_str = meta.get('freq_str')
+    if freq_str is not None:
+        meta_title.append(freq_str)
+
+    region = meta.get('region')
+    if region is not None:
+        if region == 'NA':
+            region = 'North America'
+        meta_title.append(region)
+    
+    datasets = meta.get('datasets')
+    if datasets is not None:
+        meta_title.append('{!s}'.format(datasets))
+
+    meta_title = '\n'.join(meta_title)
+    axs[0].set_title(meta_title,loc='right',fontdict={'size':'x-small'})
 
     # Account for colorbars and line up all axes.
     for ax_inx, ax in enumerate(axs):
