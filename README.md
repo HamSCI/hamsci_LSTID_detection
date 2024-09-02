@@ -2,6 +2,7 @@
 Code for automatically detecting Large Scale Traveling Ionospheric Disturbances (LSTIDs) from ham radio spot data.
 
 Developed by the HamSCI NASA Space Weather Operations to Research (SWO2R) Team with major contributions by:
+
 * Nathaniel Frissell W2NAF
 * Nicholas Callahan
 * Diego Sanchez KD2RLM
@@ -36,6 +37,7 @@ Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes ab
 # Full Algorithm Description
 ## 1. Data Loading and Gridding
 Data Loading and Gridding is handled by `hamsci_LSTID_detect.data_loading.RawSpotProcessor()`.
+
 1. For each day, RBN, PSK, and WSPRNet spot data is combined into a single data frame.
 2. Data is filtered based on frequency, TX-RX midpoint location, and TX-RX ground range. For Frissell et al. (2024, GRL), the following filters are used, which corresponds to 14 MHz signals over North America:
     1. 20$^{\circ}$ < lat < 60$^{\circ}$
@@ -46,12 +48,14 @@ Data Loading and Gridding is handled by `hamsci_LSTID_detect.data_loading.RawSpo
 
 ## 2. Gridded Array Re-scaling
 Gridded array re-scaling is handled by `hamsci_LSTID_detect.data_loading.create_xarr()`.
+
 1. Data array is trimmed so that only daylight hours in North America are used (1200-2359 UTC).
 2. A scaled version $M_{ad}$ of the gridded array $A$ is computed by `hamsci_LSTID_detect.data_loading.mad()` as follows:
 $$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
 
 ## 3. Skip Distance Edge-Detection
 Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+
 1. The x- and y- dimensions of the gridded array are trimmed by 8%.
 2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
 3. The gridded array has the minimum subtracted from the array so the lower bound is 0.
@@ -66,6 +70,7 @@ Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.r
 
 ## 4. Sine Fitting
 A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+
 1. A 15 minute rolling coefficient of variation $CV = \sigma/\mu$ is computed on the raw detected edge for use as a quality parameter.
 2. The largest contiguous time period between 1330 and 2230 UTC where $CV < 0.5$ is selected as "good".
 3. A 2nd-degree polynomial is fit to the good period.
@@ -84,7 +89,8 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
 # Example Daily Output
 ![Output of LSTID Autodetection Algorithm for 15 December 2018](20181215_curveCombo.png)
 
-LSTID automatic detection plot for 15 December 2018.
+Figure 1 shows LSTID automatic detection plot for 15 December 2018.
+
 - Panel (a): Heatmap of re-scaled, smoothed, and thresholded RBN, PSKRepoter, and WSPRNet data as a function of communications ground range versus time. Only 14 MHz band data with communications midpoints over the US (20$^{\circ}$ < lat < 60$^{\circ}$ and -160$^{\circ}$ < lon < -60$^{\circ}$) are used. Data are gridded in 10 km x 1 min bins.
 - Panel (b): Heatmap data from (a) with algorithm fit overlays. Blue line is raw detected edge; white dashed line is the final sinusoid fit with the trend added back in. Gray line is the 15-minute rolling coefficient of variation quality parameter. Green dashed vertical lines mark the start and end times used for curve fitting.
 - Panel (c): Blue line is the detrended, band-pass filtered detected edge. Red dashed line is the sinusoid fit to the detrended edge. Green dashed vertical lines mark the start and end times used for curve fitting.
