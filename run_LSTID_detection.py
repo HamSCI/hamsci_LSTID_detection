@@ -18,7 +18,7 @@ heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
 edge_dir                 = os.path.join(cache_dir,'edge_detect')
 output_dir               = 'output'
 
-multiproc                = False # Use multiprocessing
+multiproc                = True # Use multiprocessing
 nprocs                   = multiprocessing.cpu_count()
 
 bandpass                 = True
