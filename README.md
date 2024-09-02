@@ -8,8 +8,6 @@ Developed by the HamSCI NASA Space Weather Operations to Research (SWO2R) Team w
 * Bill Engelke AB4EJ
 * Mary Lou West KC2NMC
 
-To facilitate climatological studies of amateur radio-observed LSTIDs, a new, fully-automated detection and measurement algorithm was developed for this study. Briefly, amateur radio data is first gridded into 10 km x 1 min bins. After re-scaling, smoothing, and thresholding, a column-wise percentile is used to identify the bottom edge first-hop skip distance. A 15 min rolling coefficient of variation $CV = \sigma/\mu$ is computed on the raw detected edge for use as a quality parameter. The largest contiguous time period between 1330 and 2230 UTC where $CV < 0.5$ is selected. The raw detected edge within this time period is detrended using a least-squares best-fit second degree polynomial; a $1 < T < 4.5$ hr bandpass filter is then applied.
-
 # Requirements
 This code was tested on an x86 Ubuntu 22.04 LTS Linux machine with python v3.11.9 and the following libraries:
 ```
@@ -85,6 +83,12 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
   
 # Example Daily Output
 ![Output of LSTID Autodetection Algorithm for 15 December 2018](20181215_curveCombo.png)
+
+LSTID automatic detection plot for 15 December 2018.
+- Panel (a): Heatmap of re-scaled, smoothed, and thresholded RBN, PSKRepoter, and WSPRNet data as a function of communications ground range versus time. Only 14 MHz band data with communications midpoints over the US (20˚ < lat < 60˚ and -160˚ < lon < -60˚) are used. Data are gridded in 10 km x 1 min bins.
+- Panel (b): Heatmap data from (a) with algorithm fit overlays. Blue line is raw detected edge; white dashed line is the final sinusoid fit with the trend added back in. Gray line is the 15-minute rolling coefficient of variation quality parameter. Green dashed vertical lines mark the start and end times used for curve fitting.
+- Panel (c): Blue line is the detrended, band-pass filtered detected edge. Red dashed line is the sinusoid fit to the detrended edge. Green dashed vertical lines mark the start and end times used for curve fitting.
+- Panel (d): Curve-fit parameters for the 2nd degree polynomial detrend fit and the sinusoid curve fit.
 
 # Acknowledgments
 This work was supported by NASA Grants 80NSSC21K1772, 80NSSC23K0848 and United States National Science Foundation (NSF) Grant AGS-2045755.
