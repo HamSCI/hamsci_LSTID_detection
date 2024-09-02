@@ -94,8 +94,7 @@ def adjust_axes(ax_0,ax_1):
     ax_0.set_position(ax_0_pos)
 
 def curve_combo_plot(result_dct,cb_pad=0.125,
-                     output_dir=os.path.join('output','daily_plots'),
-                     auto_crit=None):
+                     output_dir=os.path.join('output','daily_plots')):
     """
     Make a curve combo stackplot that includes:
         1. Heatmap of Ham Radio Spots
@@ -111,7 +110,6 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     xlim            = md.get('xlim')
     winlim          = md.get('winlim')
     fitWinLim       = md.get('fitWinLim')
-    lstid_criteria  = md.get('lstid_criteria')
 
     arr             = result_dct.get('spotArr')
     edge_0          = result_dct.get('000_detectedEdge')
@@ -210,21 +208,14 @@ def curve_combo_plot(result_dct,cb_pad=0.125,
     for key, val in p0_sin_fit.items():
         if key == 'r2':
             txt.append('{!s}: {:0.2f}'.format(key,val))
-        elif key == 'is_lstid':
-            txt.append('{!s}: {!s}'.format(key,val))
+        elif key == 'selected': 
+            # 'selected' means the fit that had the best r2
+            # Since we are only plotting the fit with the best r2,
+            # don't explicitly print out 'selected' here.
+            continue
         else:
             txt.append('{!s}: {:0.1f}'.format(key,val))
     ax.text(0.30,0.95,'\n'.join(txt),fontdict=fontdict,va='top')
-
-    results = {}
-    if auto_crit == True:
-        txt = []
-        txt.append('Automatic LSTID Classification\nCriteria from Sinusoid Fit')
-        for key, val in lstid_criteria.items():
-            txt.append('{!s} <= {!s} < {!s}'.format(val[0],key,val[1]))
-        ax.text(0.01,0.3,'\n'.join(txt),fontdict=fontdict,va='top',bbox={'facecolor':'none','edgecolor':'black','pad':5})    
-            
-        results['sin_is_lstid']  = {'msg':'Auto', 'classification': p0_sin_fit.get('is_lstid')}
 
     fig.tight_layout()
 
@@ -286,7 +277,6 @@ def sin_fit_key_params_to_csv(all_results,output_dir='output'):
     params = []
     params.append('T_hr')
     params.append('amplitude_km')
-    params.append('is_lstid')
     params.append('agree')
     
     df_lst = []

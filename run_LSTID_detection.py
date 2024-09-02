@@ -18,14 +18,11 @@ heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
 edge_dir                 = os.path.join(cache_dir,'edge_detect')
 output_dir               = 'output'
 
-multiproc                = True # Use multiprocessing
+multiproc                = False # Use multiprocessing
 nprocs                   = multiprocessing.cpu_count()
 
 bandpass                 = True
-lstid_T_hr_lim           = (1, 4.5) # Bandpass filter cutoffs and LSTID Classification Period Criteria
-
-automatic_lstid          = False    # Display Automatic LSTID Classification on Curve Combo Plot
-lstid_criteria           = {'amplitude_km':(20,2000),'r2':(0.35,1.1)}
+lstid_T_hr_lim           = (1, 4.5) # Bandpass filter cutoffs
 
 region                   = 'NA' # 'NA' --> North America
 freq_str                 = '14 MHz'
@@ -89,8 +86,7 @@ def runEdgeDetectAndPlot(edgeDetectDict):
     if result is None: # Missing Data Case
        return 
     
-    auto_crit   = edgeDetectDict.get('auto_crit',False)
-    result      = LSTID.plotting.curve_combo_plot(result,auto_crit=auto_crit)
+    result      = LSTID.plotting.curve_combo_plot(result)
     return result
 
 tic = datetime.datetime.now()
@@ -146,10 +142,11 @@ else:
         tmp['date']           = date
         tmp['cache_dir']      = edge_dir
         tmp['bandpass']       = bandpass
-        tmp['auto_crit']      = automatic_lstid
         tmp['heatmaps']       = heatmaps
         tmp['lstid_T_hr_lim'] = lstid_T_hr_lim
-        tmp['lstid_criteria'] = lstid_criteria
+        tmp['datasets']       = datasets
+        tmp['region']         = region
+        tmp['freq_str']       = freq_str
         edgeDetectDicts.append(tmp)
 
     if not multiproc:

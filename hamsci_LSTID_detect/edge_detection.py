@@ -423,7 +423,6 @@ def run_edge_detect(
     cache_dir       = 'cache',
     bandpass        = True,
     lstid_T_hr_lim  = (1, 4.5),
-    lstid_criteria  = {},
     datasets        = None,
     region          = None,
     freq_str        = None,
@@ -431,15 +430,7 @@ def run_edge_detect(
     """
     bandpass:   Apply a bandpass filter after detrending but before sin fitting.
 
-    lstid_T_hr_lim: Values used for cutoff of the bandpass filter and for 
-                    LSTID classification (unless changed with lstid_criteria
-                    dictionary.
-
-    lstid_criteria: Dictionary used for classifying a day as LSTID-active.
-        The following values are used if not explicity specified:
-            lstid_criteria['T_hr']          = lstid_T_hr_lim    
-            lstid_criteria['amplitude_km']  = (20,2000)
-            lstid_criteria['r2']            = (0.35,1.1)
+    lstid_T_hr_lim: Values used for cutoff of the bandpass filter
     """
 
     arr = heatmaps.get_date(date,raise_missing=False)
@@ -647,22 +638,6 @@ def run_edge_detect(
 
         data_detrend = sin_fit.copy()
 
-    # Classification
-    if 'T_hr' not in lstid_criteria:
-        lstid_criteria['T_hr']          = lstid_T_hr_lim    
-    if 'amplitude_km' not in lstid_criteria:
-        lstid_criteria['amplitude_km']  = (20,2000)
-    if 'r2' not in lstid_criteria:
-        lstid_criteria['r2']            = (0.35,1.1)
-    
-    if p0_sin_fit != {}:
-        crits   = []
-        for key, crit in lstid_criteria.items():
-            val     = p0_sin_fit[key]
-            result  = np.logical_and(val >= crit[0], val < crit[1])
-            crits.append(result)
-        p0_sin_fit['is_lstid']  = np.all(crits)
-
     # Package SpotArray into XArray
     daDct               = {}
     daDct['data']       = arr
@@ -697,7 +672,6 @@ def run_edge_detect(
     meta['xlim']           = xlim
     meta['winlim']         = winlim
     meta['fitWinLim']      = fitWinLim
-    meta['lstid_criteria'] = lstid_criteria
     meta['datasets']       = datasets
     meta['region']         = region
     meta['freq_str']       = freq_str
