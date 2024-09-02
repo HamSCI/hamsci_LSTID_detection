@@ -21,12 +21,12 @@ xarray==2023.6.0
 ```
 
 # Instructions
-1. Clone Github Repository
+1. Clone GitHub Repository
 2. `pip install -e .`
 3. Place raw spot data files into `raw_data` directory.
     1. Raw spot data should be bzip2 compressed daily files.
     2. Names should be in the form of: `2018-11-01_PSK.csv.bz2`, `2018-11-01_RBN.csv.bz2`, and `2018-11-01_WSPR.csv.bz2`, etc.
-    3. Data files for 1 November 2018 - 30 April 2019 are availaible from https://doi.org/10.5281/zenodo.10673982. Due to Zenodo file number limitations, data files in this repository are combined into one *.tar file for each month.
+    3. Data files for 1 November 2018 - 30 April 2019 are available from https://doi.org/10.5281/zenodo.10673982. Due to Zenodo file number limitations, data files in this repository are combined into one *.tar file for each month.
 4. Edit parameters in the top of `run_LSTID_detection.py`.
 5. Run `./run_LSTID_detection.py`
 
@@ -56,10 +56,10 @@ Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.r
 2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
 3. The gridded array has the minimum subtracted from the array so the lower bound is 0.
 4. A maximum of the gridded array, excluding upper outliers, is taken by selecting the value of the `occurence_max=60`th pixel's largest value.
-5. The gridded array is rescaled by the maximum and `i_max=30` values so that the outlier adjusted maximum is rescaled to 30, and all float values are rounded to integers, so the array consists of approximately 30 discrete thresholds.
+5. The gridded array is re-scaled by the maximum and `i_max=30` values so that the outlier adjusted maximum is re-scaled to 30, and all float values are rounded to integers, so the array consists of approximately 30 discrete thresholds.
 6. For each unique value in the integer array, a lower threshold line is calculated by taking the index of the lowest point in each column such that the value at that point is greater than the threshold.
 7. All thresholds for the integer array are stacked vertically, and threshold values below a specified y location are set to `np.nan`.
-8. Columnwise, for each value `q` in `qs=[.4,.5,.6]`, a scalar value is selected to represent the column as the detected edge by selecting the `q`th quantile value with nans ignored.
+8. Column-wise, for each value `q` in `qs=[.4,.5,.6]`, a scalar value is selected to represent the column as the detected edge by selecting the `q`th quantile value with nans ignored.
 9. Using the edges for each value in `[.4,.5,.6]`, each edge has outlier points removed, where any point that deviates more than `max_abs_dev=20` vertical pixels from the smoothed edge is interpolated with `scipy.interpolate.CubicSpline`.
 10. After outlier removal, the edge with the lowest standard deviation against the smoothed and interpolated version of the edge is returned as `min_line` and `minz_line`, in the original and smoothed form respectively.
 11. `min_line` is returned as the raw detected edge for the image, along with the unselected edges corresponding to the `qs`, and the `minz_line` for comparison.
@@ -70,10 +70,10 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
 2. The largest contiguous time period between 1330 and 2230 UTC where $CV < 0.5$ is selected as "good".
 3. A 2nd-degree polynomial is fit to the good period.
 4. The raw detected edge within this time period is detrended using a least-squares best-fit second degree polynomial.
-5. A $1 < T < 4.5$ hr bandpass filter is applied to the detrended edge.
+5. A $1 < T < 4.5$ hr band-pass filter is applied to the detrended edge.
 6. This filtered, detrended result is curve-fit to $$A\sin(2\pi ft+\phi) + mt +b$$ to determine the LSTID amplitude $A$ and period $T=1/f$.
      1. `scipy.optimize.curve_fit()` is used as the curve fitter.
-     2. The curve fit routine is run for each of the follwing intital period guesses: $T_{hr}$ = [1,1.5,2,2.5,3,3.5,4].
+     2. The curve fit routine is run for each of the following initial period guesses: $T_{hr}$ = [1,1.5,2,2.5,3,3.5,4].
      3. Other parameter initial guesses are as follows:
         - `guess['amplitude_km']   = np.ptp(data_detrend)/2.`
         - `guess['phase_hr']       = 0.`
