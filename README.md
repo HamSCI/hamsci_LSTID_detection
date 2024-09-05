@@ -29,7 +29,7 @@ xarray==2023.6.0
 3. Place raw spot data files into `raw_data` directory.
     1. Raw spot data should be bzip2 compressed daily files.
     2. Names should be in the form of: `2018-11-01_PSK.csv.bz2`, `2018-11-01_RBN.csv.bz2`, and `2018-11-01_WSPR.csv.bz2`, etc.
-    3. Data files for 1 November 2018 - 30 April 2019 are available from https://doi.org/10.5281/zenodo.10673982. Due to Zenodo file number limitations, data files in this repository are combined into one *.tar file for each month.
+    3. Data files for 1 November 2018 - 30 April 2019 are available from [https://doi.org/10.5281/zenodo.10673982](https://zenodo.org/records/13362701). Due to Zenodo file number limitations, data files in this repository are combined into one *.tar file for each month.
 4. Edit parameters in the top of `run_LSTID_detection.py`.
 5. Run `./run_LSTID_detection.py`
 
