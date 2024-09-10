@@ -93,7 +93,7 @@ A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_
 
 Figure 1 shows LSTID automatic detection plot for 15 December 2018.
 
-- Panel (a): Heatmap of re-scaled, smoothed, and thresholded RBN, PSKRepoter, and WSPRNet data as a function of communications ground range versus time. Only 14 MHz band data with communications midpoints over the US ($$20^{\circ} < lat < 60^{\circ}$$ and $$-160^{\circ} < lon < -60^{\circ}$$) are used. Data are gridded in 10 km x 1 min bins.
+- Panel (a): Heatmap of re-scaled, smoothed, and thresholded RBN, PSKReporter, and WSPRNet data as a function of communications ground range versus time. Only 14 MHz band data with communications midpoints over the US ($$20^{\circ} < lat < 60^{\circ}$$ and $$-160^{\circ} < lon < -60^{\circ}$$) are used. Data are gridded in 10 km x 1 min bins.
 - Panel (b): Heatmap data from (a) with algorithm fit overlays. Blue line is raw detected edge; white dashed line is the final sinusoid fit with the trend added back in. Gray line is the 15-minute rolling coefficient of variation quality parameter. Green dashed vertical lines mark the start and end times used for curve fitting.
 - Panel (c): Blue line is the detrended, band-pass filtered detected edge. Red dashed line is the sinusoid fit to the detrended edge. Green dashed vertical lines mark the start and end times used for curve fitting.
 - Panel (d): Curve-fit parameters for the 2nd degree polynomial detrend fit and the sinusoid curve fit.
