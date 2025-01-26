@@ -26,8 +26,8 @@ lstid_T_hr_lim           = (1, 4.5) # Bandpass filter cutoffs
 
 region                   = 'NA' # 'NA' --> North America
 freq_str                 = '14 MHz'
-sDate                    = datetime.datetime(2018,11,1)
-eDate                    = datetime.datetime(2019,4,30)
+sDate                    = datetime.datetime(2018,12,7)
+eDate                    = datetime.datetime(2018,12,7)
 
 # NO PARAMETERS BELOW THIS LINE ################################################
 def prep_dirs(*dirs,clear_cache=False):
