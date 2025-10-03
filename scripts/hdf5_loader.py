@@ -67,6 +67,25 @@ class HDF5PolarsLoader:
         self.distance_range = distance_range
         self.chunk_size     = chunk_size
         
+        # --- basic path/date sanity ---
+        if not self.data_dir.exists():
+            raise FileNotFoundError(f"Data directory not found: {self.data_dir}")
+
+        if self.sDate > self.eDate:
+            raise ValueError(f"sDate {self.sDate} is after eDate {self.eDate}")
+
+        # --- filter dict shapes (light validation) ---
+        if self.region_bounds is not None:
+            if not {"lat_lim", "lon_lim"} <= self.region_bounds.keys():
+                raise ValueError(f"Invalid region_bounds (need lat_lim/lon_lim): {self.region_bounds}")
+
+        if self.freq_range is not None:
+            if not {"min_freq", "max_freq"} <= self.freq_range.keys():
+                raise ValueError(f"Invalid freq_range (need min_freq/max_freq): {self.freq_range}")
+
+        if self.distance_range is not None:
+            if not {"min_dist", "max_dist"} <= self.distance_range.keys():
+                raise ValueError(f"Invalid distance_range (need min_dist/max_dist): {self.distance_range}")
 
         # Construct dynamic cache path
         if self.region_bounds:
@@ -77,7 +96,11 @@ class HDF5PolarsLoader:
             region_str = "full_region"
         
         if self.freq_range:
-            freq_str = f"{self.freq_range['label']}MHz"
+            # 'label' is optional; fall back to numeric Hz span
+            label = self.freq_range.get("label")
+            if label is None:
+                label = f"{self.freq_range['min_freq']}-{self.freq_range['max_freq']}Hz"
+            freq_str = f"{label}"
         else:
             freq_str = "full_freq_range"
     
@@ -104,27 +127,6 @@ class HDF5PolarsLoader:
         self.yedges  = None
 
         self.log = logging.getLogger(__name__)
-
-        # --- basic path/date sanity ---
-        if not self.data_dir.exists():
-            raise FileNotFoundError(f"Data directory not found: {self.data_dir}")
-
-        if self.sDate > self.eDate:
-            raise ValueError(f"sDate {self.sDate} is after eDate {self.eDate}")
-
-        # --- filter dict shapes (light validation) ---
-        if self.region_bounds is not None:
-            if not {"lat_lim", "lon_lim"} <= self.region_bounds.keys():
-                raise ValueError(f"Invalid region_bounds (need lat_lim/lon_lim): {self.region_bounds}")
-
-        if self.freq_range is not None:
-            if not {"min_freq", "max_freq"} <= self.freq_range.keys():
-                raise ValueError(f"Invalid freq_range (need min_freq/max_freq): {self.freq_range}")
-
-        if self.distance_range is not None:
-            if not {"min_dist", "max_dist"} <= self.distance_range.keys():
-                raise ValueError(f"Invalid distance_range (need min_dist/max_dist): {self.distance_range}")
-
 
     def get_file_path(self, date_str):
         """Construct the file path based on the date string."""
