@@ -56,7 +56,7 @@ if __name__ == "__main__":
     base_params = dict(
         data_dir=cfg["data_dir"],
         cache_dir=cfg["cache_dir"],
-        region_name=cfg["region_name"],
+        region_bounds=REGIONS[cfg["region_name"]],
         freq_range=FREQ[cfg["freq"]],
         distance_range=cfg["distance_range"],
         use_cache=cfg["use_cache"],

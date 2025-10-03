@@ -6,7 +6,7 @@
   "data_dir": "data/madrigal",
   "cache_dir": "cache",
   "distance_range": { "min_dist": 0, "max_dist": 3000 },
-  "use_cache": true,
+  "use_cache": false,
 
   "preprocess": {
     "expected_shape": [1440, 300],

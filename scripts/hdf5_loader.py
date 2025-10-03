@@ -11,10 +11,28 @@ import pyarrow.parquet as pq
 import logging
 from pathlib import Path
 from dask.diagnostics import ProgressBar
-from scripts.utils import *
-from scripts.regions import REGIONS
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def split_datetime_range_by_day(start_dt: datetime, end_dt: datetime) -> list[tuple[datetime, datetime, str]]:
+    """Split a datetime range into daily chunks with start and end datetimes."""
+    result = []
+
+    current_start = start_dt
+    while current_start.date() < end_dt.date():
+        # End of the current day
+        current_end = datetime.combine(current_start.date(), datetime.max.time()).replace(microsecond=0)
+        date_str = current_start.strftime('%Y-%m-%d')
+        result.append((current_start, current_end, date_str))
+
+        # Move to next day
+        current_start = datetime.combine(current_start.date() + timedelta(days=1), datetime.min.time())
+
+    # Add final day segment
+    date_str = current_start.strftime('%Y-%m-%d')
+    result.append((current_start, end_dt, date_str))
+    return result
 
 class HDF5PolarsLoader:
     def __init__(self, 
@@ -24,7 +42,7 @@ class HDF5PolarsLoader:
                  eDate: datetime, 
                  cache_dir: str = "cache", 
                  use_cache: bool = True, 
-                 region_name: str = None, 
+                 region_bounds: dict | None = None, 
                  freq_range: dict = None, 
                  distance_range: dict = None, 
                  chunk_size: int = 100000, 
@@ -34,29 +52,26 @@ class HDF5PolarsLoader:
         :param date_str: The date in the format 'YYYY-MM-DD' to construct the file name.
         :param cache_dir: Directory to store cached files.
         :param use_cache: Whether to load from cache if available.
-        :param region: Region filter for data, containing 'lat_lim' and 'lon_lim'.
+        :param region_bounds: Optional geo filter with {'lat_lim': (min,max), 'lon_lim': (min,max)}.
         :param freq_range: Frequency range filter for data, containing 'min_freq' and 'max_freq'.
         :param chunk_size: Chunk size for reading the HDF5 file.
         """
-
-        if region_name not in REGIONS:
-            raise ValueError(f"Region '{region_name}' is not defined.")
         
         self.data_dir       = Path(data_dir)
         self.sDate          = sDate
         self.eDate          = eDate
         self.cache_dir      = Path(cache_dir)
         self.use_cache      = use_cache
-        self.region         = REGIONS[region_name]
+        self.region_bounds  = region_bounds
         self.freq_range     = freq_range
         self.distance_range = distance_range
         self.chunk_size     = chunk_size
         
 
         # Construct dynamic cache path
-        if self.region:
-            lat_min, lat_max = self.region['lat_lim']
-            lon_min, lon_max = self.region['lon_lim']
+        if self.region_bounds:
+            lat_min, lat_max = self.region_bounds['lat_lim']
+            lon_min, lon_max = self.region_bounds['lon_lim']
             region_str = f"lat{lat_min}_{lat_max}_lon{lon_min}_{lon_max}"
         else:
             region_str = "full_region"
@@ -80,8 +95,8 @@ class HDF5PolarsLoader:
         self.cache_dir_hist.mkdir(parents=True, exist_ok=True)
 
         # cache file paths
-        self.cache_path_df = self.cache_dir_df / f"{sDate}_{eDate}_{freq_str}_{distance_str}.parquet"
-        self.cache_path_hist = self.cache_dir_hist / f"{sDate}_{eDate}_{freq_str}_{distance_str}.parquet"
+        self.cache_path_df   = self.cache_dir_df   / f"{sDate}_{eDate}_{region_str}_{freq_str}_{distance_str}.parquet"
+        self.cache_path_hist = self.cache_dir_hist / f"{sDate}_{eDate}_{region_str}_{freq_str}_{distance_str}.parquet"
 
         self.df = None
         self.hist    = None
@@ -103,7 +118,7 @@ class HDF5PolarsLoader:
             file_name = f"rsd{date_str}.01.hdf5"
             file_path = self.data_dir / file_name
             self.log.info(f"Loading data from {sDate} - {eDate}...") 
-            self.log.info(f"Processing data from HDF5 file {file_path}...")        
+            self.log.info(f"Loading data from HDF5 file {file_path}...")        
 
             try:
                 # Load only the required columns from the HDF5 file
@@ -140,13 +155,23 @@ class HDF5PolarsLoader:
             })
             
             # Apply filters to the data (if any) before proceeding with the rest of the steps
+            self.log.info("Applying filters...")
+
             if sDate and eDate:
+                self.log.info(f" → datetime filter: {sDate} to {eDate}")
                 dask_df = dask_df.map_partitions(self.apply_datetime_filter, sDate, eDate)
-            if self.region:
+
+            if self.region_bounds:
+                lat_lim, lon_lim = self.region_bounds['lat_lim'], self.region_bounds['lon_lim']
+                self.log.info(f" → region filter: lat: ({lat_lim[0]}, {lat_lim[1]}), lon: ({lon_lim[0]}, {lon_lim[1]})")
                 dask_df = dask_df.map_partitions(self.apply_region_filter)
+
             if self.freq_range:
+                self.log.info(f" → frequency filter: {self.freq_range['min_freq']}-{self.freq_range['max_freq']} Hz")
                 dask_df = dask_df.map_partitions(self.apply_freq_filter)
+
             if self.distance_range:
+                self.log.info(f" → distance filter: {self.distance_range['min_dist']}-{self.distance_range['max_dist']} km")
                 dask_df = dask_df.map_partitions(self.apply_distance_filter)
             
             # Continue processing and converting to pandas (or directly to Polars)
@@ -243,9 +268,9 @@ class HDF5PolarsLoader:
         return df
     
     def apply_region_filter(self, df):
-        """Apply the region filter to the Dask DataFrame using the midpoint lat/lon columns."""
-        if self.region:
-            lat_lim, lon_lim = self.region['lat_lim'], self.region['lon_lim']
+        """Apply the (optional) region_bounds to midpoint lat/lon columns."""
+        if self.region_bounds:
+            lat_lim, lon_lim = self.region_bounds['lat_lim'], self.region_bounds['lon_lim']
             df = df[(df['latcen'] >= lat_lim[0]) & (df['latcen'] < lat_lim[1])]
             df = df[(df['loncen'] >= lon_lim[0]) & (df['loncen'] < lon_lim[1])]
         return df
@@ -364,43 +389,64 @@ class HDF5PolarsLoader:
 
 
 if __name__ == "__main__":
-    
-    
-    freq_range = {
-        'min_freq': 6000000,  # Example minimum frequency (0 MHz)
-        'max_freq': 8000000  # Example maximum frequency (30 MHz)
-    }
+    # --- simple demo run for a single day ---
+    import logging
+    from datetime import datetime
 
-    distance_range = {
-        'min_dist': 0,    # Example minimum distance in kilometers
-        'max_dist': 3000  # Example maximum distance in kilometers
-    }
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-    # Define the altitudes for conversion
-    #altitudes = [0,100,300]  # Altitudes in km
-
-    # Define the date range you want to process (e.g., a list of dates)
+    # Date window (inclusive start, inclusive end by second)
     sDate = datetime(2019, 12, 1, 0, 0, 0)
     eDate = datetime(2019, 12, 1, 23, 59, 59)
 
-    region = 'Continental US'
+    # Optional region filter — comment out to use full footprint
+    region_bounds = {
+        "lat_lim": [24.5, 49.5],   # Continental US example
+        "lon_lim": [-125.0, -66.5]
+    }
+    # region_bounds = None  # ← uncomment this line to disable geographic filtering
 
+    # Frequency & distance filters (explicit numbers the loader understands)
+    # Example: “7 MHz band-ish” (6–8 MHz) in Hz:
+    freq_range = {
+        "min_freq": 6_000_000,
+        "max_freq": 8_000_000,
+        "label": "7"  # optional; used only for cache naming/logs
+    }
+
+    distance_range = {
+        "min_dist": 0,     # km
+        "max_dist": 3000   # km
+    }
+
+    # Paths & cache settings
+    data_dir = "data/madrigal"
+    cache_dir = "cache"
+    use_cache = True
+
+    # Build the loader
     loader = HDF5PolarsLoader(
-        data_dir="data/madrigal", 
+        data_dir=data_dir,
         sDate=sDate,
         eDate=eDate,
-        region_name=region, 
-        freq_range=freq_range,
-        distance_range=distance_range,
-        use_cache=True
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+        region_bounds=region_bounds,   # None => no geographic filter
+        freq_range=freq_range,         # None => no frequency filter
+        distance_range=distance_range, # None => no distance filter
+        chunk_size=100_000,
     )
 
-    # Clear cache and load the dataframe (it will use the cache if available and `use_cache=True`)
-    loader.clear_cache()  # Clear cache first
-    df = loader.get_dataframe()  # Load the data
-    hist = loader.gen_histogram()
+    # (Optional) Clear any prior cache files for this window/config
+    # loader.clear_cache()
 
-    # Print the processed data
-    print(f"Finished df_gen test run for {sDate} - {eDate}:")
-    print(df)
-    print(hist.shape)
+    # Load data and build histogram
+    df = loader.get_dataframe()
+    hist2d, meta = loader.gen_histogram()
+
+    # Report
+    print(f"\nFinished loader demo for {sDate} → {eDate}")
+    print(f"Rows: {df.height if isinstance(df, pl.DataFrame) else len(df)}")
+    print(f"Histogram shape: {hist2d.shape}")
+    print("Meta:", {k: meta[k] for k in ("time_bin_seconds", "distance_bin_km", "n_time", "n_height")})
+
