@@ -105,6 +105,27 @@ class HDF5PolarsLoader:
 
         self.log = logging.getLogger(__name__)
 
+        # --- basic path/date sanity ---
+        if not self.data_dir.exists():
+            raise FileNotFoundError(f"Data directory not found: {self.data_dir}")
+
+        if self.sDate > self.eDate:
+            raise ValueError(f"sDate {self.sDate} is after eDate {self.eDate}")
+
+        # --- filter dict shapes (light validation) ---
+        if self.region_bounds is not None:
+            if not {"lat_lim", "lon_lim"} <= self.region_bounds.keys():
+                raise ValueError(f"Invalid region_bounds (need lat_lim/lon_lim): {self.region_bounds}")
+
+        if self.freq_range is not None:
+            if not {"min_freq", "max_freq"} <= self.freq_range.keys():
+                raise ValueError(f"Invalid freq_range (need min_freq/max_freq): {self.freq_range}")
+
+        if self.distance_range is not None:
+            if not {"min_dist", "max_dist"} <= self.distance_range.keys():
+                raise ValueError(f"Invalid distance_range (need min_dist/max_dist): {self.distance_range}")
+
+
     def get_file_path(self, date_str):
         """Construct the file path based on the date string."""
         file_name = f"rsd{date_str}.01.hdf5"
@@ -185,6 +206,10 @@ class HDF5PolarsLoader:
             final_df = pd.DataFrame()
 
         self.log.info(f"Loaded and merged data from {self.sDate} - {self.eDate}...") 
+        if not all_dfs:
+            raise FileNotFoundError(
+                f"No HDF5 files found/readable for {self.sDate} → {self.eDate} in {self.data_dir}"
+    )
         return final_df
 
     def process_data(self):
@@ -195,6 +220,8 @@ class HDF5PolarsLoader:
             return self.df
 
         df = self.load_data()
+        if df.empty:
+            raise RuntimeError(f"No data loaded for {self.sDate} → {self.eDate}.")
         
         # Renaming and processing the dataframe as before
 #        df['occurred'] = pd.to_datetime(df['year'] + '-' + df['month'] + '-' + df['day'] + ' ' + df['hour'] + ':' + df['min'] + ':' + df['sec'])
@@ -311,6 +338,8 @@ class HDF5PolarsLoader:
         Generates (or loads) a 2D histogram of time vs distance.
         Returns: (hist2d: np.ndarray, meta: dict)
         """
+        if self.df is None or (hasattr(self.df, "height") and self.df.height == 0):
+            raise RuntimeError("No dataframe loaded; call get_dataframe() before gen_histogram().")
         # ---- fast path: load from cache ----
         if self.use_cache and self.cache_path_hist.exists():
             try:
