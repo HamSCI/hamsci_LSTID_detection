@@ -1,176 +1,78 @@
-#!/usr/bin/env python
-# coding: utf-8
+#!/usr/bin/env python3
+
 import os
-import shutil
-import datetime
-import pickle
-import multiprocessing
+import math
+from datetime import datetime
+from datetime import timedelta
+import argparse, sys, json
+import polars as pl
+import pyarrow.parquet as pq
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from PIL import Image
+import logging
+import io
+import pandas as pd
 
-import hamsci_LSTID_detect as LSTID
+from scipy.ndimage import gaussian_filter
+from scipy.interpolate import CubicSpline
+from scipy.signal import butter, filtfilt
+import statsmodels.api as sm
 
-# EDIT PARAMETERS HERE #########################################################
-raw_processing_input_dir = 'raw_data'
-datasets                = ['PSK','RBN','WSPR']
+# Internal modules
+from scripts.regions import REGIONS
+from scripts.utils import split_datetime_range_by_day
+from scripts.utils_freq import *
+from scripts.json_loader import *
+from scripts.hdf5_loader import HDF5PolarsLoader
+from scripts.heatmap_preprocess import preprocess_heatmap
+from scripts.edge_detect import edge_detection
 
-clear_cache              = True
-cache_dir                = 'cache'
-heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
-edge_dir                 = os.path.join(cache_dir,'edge_detect')
-output_dir               = 'output'
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log = logging.getLogger(__name__)
 
-multiproc                = True # Use multiprocessing
-nprocs                   = multiprocessing.cpu_count()
+if __name__ == "__main__":
 
-bandpass                 = True
-lstid_T_hr_lim           = (1, 4.5) # Bandpass filter cutoffs
 
-region                   = 'NA' # 'NA' --> North America
-freq_str                 = '14 MHz'
-sDate                    = datetime.datetime(2018,11,1)
-eDate                    = datetime.datetime(2019,4,30)
+    cfg, _ = load_config()
+    required = ["data_dir","cache_dir","region_name","freq","distance_range","use_cache"]
+    missing = [k for k in required if k not in cfg]
+    if missing:
+        raise KeyError(f"Missing required config keys: {missing}")
 
-# NO PARAMETERS BELOW THIS LINE ################################################
-def prep_dirs(*dirs,clear_cache=False):
-    """
-    Prepare output directories:
-        1. If clear_cache is True, delete existing directory.
-        2. Create directory if it does not exist.
+    base_params = dict(
+        data_dir=cfg["data_dir"],
+        cache_dir=cfg["cache_dir"],
+        region_name=cfg["region_name"],
+        freq_range=FREQ[cfg["freq"]],
+        distance_range=cfg["distance_range"],
+        use_cache=cfg["use_cache"],
+        expected_shape=tuple(cfg["expected_shape"]),
+        expected_size=int(cfg["expected_size"]),
+        min_dev=float(cfg["min_dev"]),
+        x_trim=float(cfg["x_trim"]),
+        y_trim=float(cfg["y_trim"]),
+        sigma=float(cfg["sigma"]),
+        occurrence_n=int(cfg["occurrence_n"]),
+        i_max=int(cfg["i_max"]),
+        qs=cfg["qs"],
+    )
 
-    dirs:   strings of directory names
-    """
-    for dr in dirs:
-        if clear_cache and os.path.exists(dr):
-            shutil.rmtree(dr)
+    for s_dt, e_dt, date_str in split_datetime_range_by_day(cfg["sDate"], cfg["eDate"]):
 
-    for dr in dirs:
-        if not os.path.exists(dr):
-            os.makedirs(dr)
+        day_params = dict(base_params, sDate=s_dt, eDate=e_dt)
+        loader = HDF5PolarsLoader(**day_params)
+        df      = loader.get_dataframe()
+        hist2d, meta = loader.gen_histogram()
 
-def get_dates(sDate,eDate):
-    """
-    Returns a list of each date from the sDate up to the eDate.
-    """
-    dates   = [sDate]
-    while dates[-1] < eDate:
-        dates.append(dates[-1]+datetime.timedelta(days=1))
-    
-    return dates
-
-def runEdgeDetectAndPlot(edgeDetectDict):
-    """
-    Wrapper function for edge detection and plotting to use with
-    multiprocessing.
-    """
-    date        = edgeDetectDict['date']
-    cache_dir   = edgeDetectDict.get('cache_dir','cache')
-    print('Edge Detection: {!s}'.format(date))
-
-    date_str    = date.strftime('%Y%m%d')
-    pkl_fname   = f'{date_str}_edgeDetect.pkl'
-    pkl_fpath   = os.path.join(cache_dir,pkl_fname)
-
-    if os.path.exists(pkl_fpath):
-        print('   LOADING: {!s}'.format(pkl_fpath))
-        with open(pkl_fpath,'rb') as fl:
-            result = pickle.load(fl)
-    else:
-        result  = LSTID.edge_detection.run_edge_detect(**edgeDetectDict)
-
-        if not os.path.exists(cache_dir):
-            os.mkdir(cache_dir)
-
-        with open(pkl_fpath,'wb') as fl:
-            print('   PICKLING: {!s}'.format(pkl_fpath))
-            pickle.dump(result,fl)
-
-    if result is None: # Missing Data Case
-       return 
-    
-    result      = LSTID.plotting.curve_combo_plot(result)
-    return result
-
-tic = datetime.datetime.now()
-
-prep_dirs(cache_dir,heatmap_csv_dir,edge_dir,output_dir,clear_cache=clear_cache)
-dates   = get_dates(sDate,eDate)
-
-# Cache All Results to a Pickle File ###########################################
-sDate_str   = sDate.strftime('%Y%m%d')
-eDate_str   = eDate.strftime('%Y%m%d')
-pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
-pkl_fpath   = os.path.join(cache_dir,pkl_fname)
-if os.path.exists(pkl_fpath):
-    with open(pkl_fpath,'rb') as fl:
-        print('LOADING: {!s}'.format(pkl_fpath))
-        all_results = pickle.load(fl)
-else:    
-    ######################################## 
-    # Load Raw CSV data and create 2d hist CSV files
-    # Generate a list of dictionaries with parameters of each day to be processed.
-    rawProcDicts    = [] 
-    for date in dates:
-        tmp = dict(
-            start_date = date,
-            end_date   = date,
-            input_dir  = raw_processing_input_dir,
-            output_dir = heatmap_csv_dir,
-            region     = region,
-            freq_str   = freq_str,
-            datasets   = datasets,
-            csv_gen    = True,
-            hist_gen   = True,
-            geo_gen    = False,
-            dask       = False
+        arr, arr_times, ranges_km, Ts_sec, Ts_td = preprocess_heatmap(
+            hist2d, meta, **day_params
         )
-        rawProcDicts.append(tmp)
 
-    # Process each day of Raw Spots
-    if not multiproc: # NO multiprocessing
-        for rawProcDict in rawProcDicts:
-            LSTID.data_loading.runRawProcessing(rawProcDict)
-    else: # YES multiprocessing
-        with multiprocessing.Pool(nprocs) as pool:
-            pool.map(LSTID.data_loading.runRawProcessing,rawProcDicts)
-    
-    # Load in CSV Histograms/Heatmaps ###############
-    heatmaps    = LSTID.data_loading.HeatmapDateIter(heatmap_csv_dir)
+        daily_result = edge_detection(arr, arr_times, ranges_km, Ts_sec, Ts_td, **day_params)
 
-    # Edge Detection, Curve Fitting, and Plotting ##########
-    edgeDetectDicts = []
-    for date in dates:
-        tmp = {}
-        tmp['date']           = date
-        tmp['cache_dir']      = edge_dir
-        tmp['bandpass']       = bandpass
-        tmp['heatmaps']       = heatmaps
-        tmp['lstid_T_hr_lim'] = lstid_T_hr_lim
-        tmp['datasets']       = datasets
-        tmp['region']         = region
-        tmp['freq_str']       = freq_str
-        edgeDetectDicts.append(tmp)
+        print(dalily_result)
 
-    if not multiproc:
-        results = []
-        for edgeDetectDict in edgeDetectDicts:
-            result = runEdgeDetectAndPlot(edgeDetectDict)
-            results.append(result)
-    else:
-        with multiprocessing.Pool(nprocs) as pool:
-            results = pool.map(runEdgeDetectAndPlot,edgeDetectDicts)
 
-    all_results = {}
-    for date,result in zip(dates,results):
-        if result is None: # No data case
-            continue
-        print(date)
-        all_results[date] = result
-        
-    with open(pkl_fpath,'wb') as fl:
-        print('PICKLING: {!s}'.format(pkl_fpath))
-        pickle.dump(all_results,fl)
-
-LSTID.plotting.plot_sin_fit_analysis(all_results,output_dir=output_dir)
-LSTID.plotting.sin_fit_key_params_to_csv(all_results,output_dir=output_dir)
-
-toc = datetime.datetime.now()
-print('Processing and plotting time: {!s}'.format(toc-tic))
