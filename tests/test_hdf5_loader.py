@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 
+import shutil
 import sys
 from pathlib import Path
 
-# Add project root to sys.path (so "scripts" is importable)
+# Make project root importable so "scripts" resolves
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import pytest
 from datetime import datetime
 import pandas as pd
 import numpy as np
+
 
 # 1) __init__: data_dir must exist
 def test_init_raises_when_data_dir_missing(tmp_path):
@@ -23,6 +25,7 @@ def test_init_raises_when_data_dir_missing(tmp_path):
             use_cache=True,
         )
 
+
 # 2) __init__: sDate must be <= eDate
 def test_init_raises_when_start_after_end(tmp_path):
     import scripts.hdf5_loader as loader_mod
@@ -35,7 +38,8 @@ def test_init_raises_when_start_after_end(tmp_path):
             use_cache=True,
         )
 
-# 3) __init__: invalid region_bounds shape
+
+# 3) __init__: invalid region_bounds shape (missing lon_lim)
 def test_init_raises_on_bad_region_bounds(tmp_path):
     import scripts.hdf5_loader as loader_mod
     with pytest.raises(ValueError, match="Invalid region_bounds"):
@@ -45,10 +49,11 @@ def test_init_raises_on_bad_region_bounds(tmp_path):
             eDate=datetime(2020, 1, 1, 23, 59, 59),
             cache_dir=str(tmp_path / "cache"),
             use_cache=True,
-            region_bounds={"lat_lim": (0, 10)}  # lon_lim missing
+            region_bounds={"lat_lim": (0, 10)},  # lon_lim missing
         )
 
-# 4) __init__: invalid freq_range shape
+
+# 4) __init__: invalid freq_range shape (missing max_freq)
 def test_init_raises_on_bad_freq_range(tmp_path):
     import scripts.hdf5_loader as loader_mod
     with pytest.raises(ValueError, match="Invalid freq_range"):
@@ -58,10 +63,11 @@ def test_init_raises_on_bad_freq_range(tmp_path):
             eDate=datetime(2020, 1, 1, 23, 59, 59),
             cache_dir=str(tmp_path / "cache"),
             use_cache=True,
-            freq_range={"min_freq": 1_000_000}  # max_freq missing
+            freq_range={"min_freq": 1_000_000},  # max_freq missing
         )
 
-# 5) __init__: invalid distance_range shape
+
+# 5) __init__: invalid distance_range shape (missing max_dist)
 def test_init_raises_on_bad_distance_range(tmp_path):
     import scripts.hdf5_loader as loader_mod
     with pytest.raises(ValueError, match="Invalid distance_range"):
@@ -71,24 +77,25 @@ def test_init_raises_on_bad_distance_range(tmp_path):
             eDate=datetime(2020, 1, 1, 23, 59, 59),
             cache_dir=str(tmp_path / "cache"),
             use_cache=True,
-            distance_range={"min_dist": 0}  # max_dist missing
+            distance_range={"min_dist": 0},  # max_dist missing
         )
 
-# 6) load_data(): no files found/readable in range → FileNotFoundError (bubbles via get_dataframe/process_data)
+
+# 6) get_dataframe(): bubbles FileNotFoundError when no HDF5 files in range
 def test_get_dataframe_raises_when_no_hdf5_files(tmp_path):
     import scripts.hdf5_loader as loader_mod
-    # Create valid cache dir; no data files in data_dir
     loader = loader_mod.HDF5PolarsLoader(
-        data_dir=str(tmp_path),
+        data_dir=str(tmp_path),  # valid dir, but no files inside
         sDate=datetime(2020, 1, 1, 0, 0, 0),
         eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
         use_cache=True,
     )
     with pytest.raises(FileNotFoundError, match="No HDF5 files found/readable"):
-        loader.get_dataframe()  # triggers process_data -> load_data -> raise
+        loader.get_dataframe()  # process_data -> load_data -> raise
 
-# 7) process_data(): empty df after load_data (e.g., all rows filtered out) → RuntimeError
+
+# 7) process_data(): raises RuntimeError if load_data() returns empty DataFrame
 def test_process_data_raises_on_empty_df(tmp_path, monkeypatch):
     import scripts.hdf5_loader as loader_mod
     import pandas as pd
@@ -98,16 +105,16 @@ def test_process_data_raises_on_empty_df(tmp_path, monkeypatch):
         sDate=datetime(2020, 1, 1, 0, 0, 0),
         eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
-        use_cache=False,  # ensure it tries to load/process
+        use_cache=False,  # ensures it tries to load/process
     )
-
-    # Stub load_data to simulate "files exist but filters dropped everything"
+    # Simulate "files existed but everything got filtered away"
     monkeypatch.setattr(loader, "load_data", lambda: pd.DataFrame())
 
     with pytest.raises(RuntimeError, match="No data loaded"):
         loader.get_dataframe()
 
-# 8) gen_histogram(): called before any dataframe is loaded → RuntimeError
+
+# 8) gen_histogram(): raises RuntimeError if called before any dataframe is loaded
 def test_gen_histogram_raises_if_no_df_loaded(tmp_path):
     import scripts.hdf5_loader as loader_mod
 
@@ -118,10 +125,11 @@ def test_gen_histogram_raises_if_no_df_loaded(tmp_path):
         cache_dir=str(tmp_path / "cache"),
         use_cache=True,
     )
-
     with pytest.raises(RuntimeError, match="No dataframe loaded; call get_dataframe"):
         loader.gen_histogram()
 
+
+# 9) apply_region_filter(): drops rows outside lat/lon bounds
 def test_apply_region_filter_trims_rows(tmp_path):
     import scripts.hdf5_loader as loader_mod
 
@@ -132,8 +140,8 @@ def test_apply_region_filter_trims_rows(tmp_path):
 
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020,1,1,0,0,0),
-        eDate=datetime(2020,1,1,23,59,59),
+        sDate=datetime(2020, 1, 1, 0, 0, 0),
+        eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
         region_bounds={"lat_lim": (20, 40), "lon_lim": (-120, -60)},
         use_cache=False,
@@ -144,14 +152,15 @@ def test_apply_region_filter_trims_rows(tmp_path):
     assert out.iloc[0]["latcen"] == 30.0 and out.iloc[0]["loncen"] == -100.0
 
 
+# 10) apply_freq_filter(): keeps only rows in [min_freq, max_freq]
 def test_apply_freq_filter_trims_rows(tmp_path):
     import scripts.hdf5_loader as loader_mod
 
     df = pd.DataFrame({"tfreq": [5_000_000, 7_500_000, 9_000_000]})
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020,1,1,0,0,0),
-        eDate=datetime(2020,1,1,23,59,59),
+        sDate=datetime(2020, 1, 1, 0, 0, 0),
+        eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
         freq_range={"min_freq": 6_000_000, "max_freq": 8_000_000},
         use_cache=False,
@@ -160,14 +169,15 @@ def test_apply_freq_filter_trims_rows(tmp_path):
     assert np.array_equal(out["tfreq"].to_numpy(), [7_500_000])
 
 
+# 11) apply_distance_filter(): keeps only rows in [min_dist, max_dist]
 def test_apply_distance_filter_trims_rows(tmp_path):
     import scripts.hdf5_loader as loader_mod
 
     df = pd.DataFrame({"pthlen": [100, 500, 2500]})
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020,1,1,0,0,0),
-        eDate=datetime(2020,1,1,23,59,59),
+        sDate=datetime(2020, 1, 1, 0, 0, 0),
+        eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
         distance_range={"min_dist": 200, "max_dist": 2000},
         use_cache=False,
@@ -176,6 +186,7 @@ def test_apply_distance_filter_trims_rows(tmp_path):
     assert np.array_equal(out["pthlen"].to_numpy(), [500])
 
 
+# 12) apply_datetime_filter(): keeps rows within [sDate, eDate]
 def test_apply_datetime_filter_keeps_window(tmp_path):
     import scripts.hdf5_loader as loader_mod
 
@@ -190,16 +201,17 @@ def test_apply_datetime_filter_keeps_window(tmp_path):
 
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020,1,1,6,0,0),
-        eDate=datetime(2020,1,1,18,0,0),
+        sDate=datetime(2020, 1, 1, 6, 0, 0),
+        eDate=datetime(2020, 1, 1, 18, 0, 0),
         cache_dir=str(tmp_path / "cache"),
         use_cache=False,
     )
     out = loader.apply_datetime_filter(df.copy(), loader.sDate, loader.eDate)
     assert len(out) == 1
-    assert (out[["hour","min","sec"]].iloc[0] == [12,0,0]).all()
+    assert (out[["hour", "min", "sec"]].iloc[0] == [12, 0, 0]).all()
 
 
+# 13) process_data(): transforms to Polars with expected columns/values
 def test_process_data_transforms_to_polars_with_expected_cols(tmp_path, monkeypatch):
     import scripts.hdf5_loader as loader_mod
     import polars as pl
@@ -224,41 +236,46 @@ def test_process_data_transforms_to_polars_with_expected_cols(tmp_path, monkeypa
 
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020,1,1,0,0,0),
-        eDate=datetime(2020,1,1,23,59,59),
+        sDate=datetime(2020, 1, 1, 0, 0, 0),
+        eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
         use_cache=False,
     )
+    # Avoid hitting Dask/HDF5; inject our tiny frame
     monkeypatch.setattr(loader, "load_data", lambda: pdf)
 
     df_pl = loader.get_dataframe()
     assert isinstance(df_pl, pl.DataFrame)
 
-    expected = ["date","freq","band","dist_Km","source","mid_lat","mid_long","rx_lat","tx_lat","rx_long","tx_long","freq_MHz"]
+    expected = [
+        "date", "freq", "band", "dist_Km", "source",
+        "mid_lat", "mid_long", "rx_lat", "tx_lat",
+        "rx_long", "tx_long", "freq_MHz",
+    ]
     for col in expected:
         assert col in df_pl.columns
 
     out = df_pl.to_dicts()[0]
     assert out["dist_Km"] == 500
     assert out["freq"] == 7_500_000.0
-    assert out["freq_MHz"] == 8
+    assert out["freq_MHz"] == 8  # (7.5e6 / 1e6) rounded 0
 
 
+# 14) gen_histogram(): builds a basic histogram and returns meta
 def test_gen_histogram_basic(tmp_path):
     import scripts.hdf5_loader as loader_mod
     import polars as pl
-    import numpy as np
 
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020,1,1,0,0,0),
-        eDate=datetime(2020,1,1,0,2,0),
+        sDate=datetime(2020, 1, 1, 0, 0, 0),
+        eDate=datetime(2020, 1, 1, 0, 2, 0),  # 2 minutes span
         cache_dir=str(tmp_path / "cache"),
         use_cache=False,
     )
 
     df_pl = pl.DataFrame({
-        "date":     [datetime(2020,1,1,0,0,0), datetime(2020,1,1,0,1,0)],
+        "date":     [datetime(2020, 1, 1, 0, 0, 0), datetime(2020, 1, 1, 0, 1, 0)],
         "freq":     [7_500_000.0, 7_500_000.0],
         "band":     [0, 0],
         "dist_Km":  [10.0, 30.0],
@@ -276,7 +293,41 @@ def test_gen_histogram_basic(tmp_path):
     H, meta = loader.gen_histogram()
     assert isinstance(H, np.ndarray)
     assert H.ndim == 2
-    for k in ("time_bin_seconds","distance_bin_km","n_time","n_height"):
+    for k in ("time_bin_seconds", "distance_bin_km", "n_time", "n_height"):
         assert k in meta
     assert meta["time_bin_seconds"] == 60
     assert meta["distance_bin_km"] == 10
+
+def test_legacy_heatmap_matches_madrigal(tmp_path):
+    # --- Set your test data paths (adjust if you keep them elsewhere) ---
+    legacy_csv   = Path("tests/data/heatmaps/spots_2025-01-01_T0_B20_RBN_WSPR_PSK___NA.csv")
+    madrigal_h5  = Path("tests/data/madrigal/rsd2025-01-01.01.hdf5")
+
+    # Make a temp madrigal dir with the expected filename so the loader can find it
+    madrigal_dir = tmp_path / "madrigal"
+    madrigal_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(madrigal_h5, madrigal_dir / madrigal_h5.name)
+
+    # Import here to avoid module import surprises during collection
+    import scripts.hdf5_loader as loader_mod
+
+    # Load the legacy reference heatmap (counts matrix; no header)
+    H_old = pd.read_csv(legacy_csv, header=None).to_numpy()
+
+    # Build the new heatmap from Madrigal using the new loader
+    loader = loader_mod.HDF5PolarsLoader(
+        data_dir=str(madrigal_dir),
+        sDate=datetime(2025, 1, 1, 0, 0, 0),
+        eDate=datetime(2025, 1, 1, 23, 59, 59),
+        cache_dir=str(tmp_path / "cache"),
+        use_cache=False,
+        region_bounds={"lat_lim": (24.5, 49.5), "lon_lim": (-125.0, -66.5)},
+        freq_range={"min_freq": 13_000_000, "max_freq": 15_000_000, "label": "14"},
+        distance_range={"min_dist": 0, "max_dist": 3000},
+    )
+    _ = loader.get_dataframe()
+    H_new, _ = loader.gen_histogram()
+
+    # Must match exactly: same shape and same counts
+    assert H_new.shape == H_old.shape, f"shape mismatch: new {H_new.shape} vs old {H_old.shape}"
+    assert np.array_equal(H_new, H_old), "heatmap values differ"

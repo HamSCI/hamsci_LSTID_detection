@@ -89,6 +89,7 @@ if __name__ == "__main__":
         loader = HDF5PolarsLoader(**day_params)
         df = loader.get_dataframe()
         hist2d, meta = loader.gen_histogram()
+        print(hist2d.shape)
 
         arr, arr_times, ranges_km, Ts_sec, Ts_td = preprocess_heatmap(hist2d, meta, **pre_params)
         daily_result = thresholding(arr, arr_times, ranges_km, Ts_sec, Ts_td, **edge_params)

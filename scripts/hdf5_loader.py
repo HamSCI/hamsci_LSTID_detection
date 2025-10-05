@@ -362,14 +362,19 @@ class HDF5PolarsLoader:
                 self.log.warning(f"Failed to read cached heatmap '{self.cache_path_hist}': {e}. Recomputing...")
 
         # ---- compute and write cache ----
-        self.df = self.df.with_columns(pl.col("date").dt.epoch("s").alias("time_numeric"))
-
-        distance_bins = np.arange(0, self.df.select(pl.max("dist_Km")).item(), 10)
-        time_bins = np.arange(
-            self.df.select(pl.min("time_numeric")).item(),
-            self.df.select(pl.max("time_numeric")).item(),
-            60,
+        self.df = self.df.with_columns(
+            pl.col("date").dt.truncate("1m").dt.epoch("s").alias("time_numeric")
         )
+
+        if self.distance_range:
+            min_dist = int(self.distance_range["min_dist"])
+            max_dist = int(self.distance_range["max_dist"])
+            distance_bins = np.arange(min_dist, max_dist, 10)  
+        else:
+            distance_bins = np.arange(0, int(self.df.select(pl.max("dist_Km")).item()), 10)
+        start_edge     = int(pd.Timestamp(self.sDate).floor("min").timestamp())
+        end_edge_excl  = int(pd.Timestamp(self.eDate).floor("min").timestamp()) + 60
+        time_bins = np.arange(start_edge, end_edge_excl, 60)
 
         self.hist, self.xedges, self.yedges = np.histogram2d(
             self.df.get_column("time_numeric").to_numpy(),
