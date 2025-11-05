@@ -28,7 +28,8 @@ from scripts.utils_freq import *
 from scripts.json_loader import *
 from scripts.hdf5_loader import HDF5PolarsLoader
 from scripts.heatmap_preprocess import preprocess_heatmap
-from scripts.edge_detect import thresholding
+from scripts.edge_detect import detect_edge
+from scripts.sinusoid_fitting import sin_fit
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
@@ -89,11 +90,11 @@ if __name__ == "__main__":
         loader = HDF5PolarsLoader(**day_params)
         df = loader.get_dataframe()
         hist2d, meta = loader.gen_histogram()
-        print(hist2d.shape)
 
         arr, arr_times, ranges_km, Ts_sec, Ts_td = preprocess_heatmap(hist2d, meta, **pre_params)
-        daily_result = thresholding(arr, arr_times, ranges_km, Ts_sec, Ts_td, **edge_params)
+        daily_df, daily_meta = detect_edge(s_dt, arr, arr_times, ranges_km, Ts_sec, Ts_td, **edge_params)
 
-        print(daily_result)
+        sf = sin_fit(daily_df, daily_meta)
+    
 
 

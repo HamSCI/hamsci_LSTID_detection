@@ -100,3 +100,8 @@ Figure 1 shows LSTID automatic detection plot for 15 December 2018.
 
 # Acknowledgments
 This work was supported by NASA Grants 80NSSC21K1772, 80NSSC23K0848 and United States National Science Foundation (NSF) Grant AGS-2045755.
+
+
+
+
+python3 run_LSTID_detection.py -p config.json

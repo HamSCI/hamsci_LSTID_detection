@@ -361,7 +361,6 @@ class HDF5PolarsLoader:
             except Exception as e:
                 self.log.warning(f"Failed to read cached heatmap '{self.cache_path_hist}': {e}. Recomputing...")
 
-        # ---- compute and write cache ----
         self.df = self.df.with_columns(
             pl.col("date").dt.truncate("1m").dt.epoch("s").alias("time_numeric")
         )

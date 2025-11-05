@@ -85,109 +85,90 @@ def preprocess_heatmap(
     **_: Any
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float, timedelta]:
     """
-    Preprocess a 2D heatmap image (time vs. range bins).
+    Preprocess a 2D heatmap image (time × range bins).
 
-    Pipeline:
-        1. Pad raw array to a consistent shape.
-        2. Cut along time axis to keep latter half (e.g., daily → half-day).
-        3. Apply MAD normalization (robust scaling).
-        4. Build time/range coordinates aligned with standardized grid.
-        5. Apply symmetric trims in both axes.
-        6. Replace NaNs with zeros.
-        7. Gaussian smooth (on transposed array).
-        8. Rescale values to integer-like uint8 range [0, i_max].
-
-    Parameters
-    ----------
-    hist2d : np.ndarray
-        Raw 2D histogram input (time x range).
-    meta : dict
-        Metadata with required keys:
-          - "time_bin_seconds" : float, seconds per time bin
-          - "distance_bin_km"  : float, km per range bin
-          - "xedge_start"      : float, epoch seconds start of time bins
-          - "yedge_start_km"   : float, km start of range bins
-          - "sDate"            : str (ISO datetime) reference day for anchoring
-    expected_shape : tuple[int, int]
-        Target shape for padding (time, range).
-    expected_size : int
-        Expected time dimension before cut-half (must be even).
-    min_dev : float
-        Minimum denominator for MAD normalization.
-    x_trim : float
-        Fraction of time axis to trim symmetrically.
-    y_trim : float
-        Fraction of range axis to trim symmetrically.
-    sigma : float
-        Gaussian smoothing sigma.
-    occurrence_n : int
-        Number of top pixels excluded when computing robust max for rescaling.
-    i_max : int
-        Upper bound of rescaled intensity range (≤ 255).
-    qs : optional
-        Ignored; placeholder for API compatibility.
-    **_ : Any
-        Extra unused arguments are ignored.
+    Pipeline
+    --------
+      1. Pad raw array to a consistent shape.
+      2. Cut along the time axis to keep the latter half (e.g., daily → half-day).
+      3. Apply MAD normalization (robust scaling).
+      4. Rebuild time/range coordinates using **LEFT EDGES** (not centers) so that
+         timestamps land exactly on :00 and match legacy outputs.
+         ⚠️ Includes the half-day offset introduced by step 2.
+      5. Apply symmetric trims on both axes.
+      6. Replace NaNs with zeros.
+      7. Gaussian smooth the **transposed** array (range × time).
+      8. Rescale values to an integer-like range [0, i_max].
 
     Returns
     -------
     arr : np.ndarray
-        Preprocessed array, dtype uint8, shape [T_trim, H_trim].
+        Preprocessed array, dtype uint8, shape (H_trim, T_trim) after transpose+smooth.
     arr_times : np.ndarray
-        1D array of epoch seconds, len == T_trim.
+        1D np.datetime64[ns] array of **bin LEFT EDGES** (legacy-compatible), len == T_trim.
     ranges_km : np.ndarray
-        1D array of range bin centers in km, len == H_trim.
+        1D array of range bin **centers** in km, length == H_trim (trimmed).
     Ts_sec : float
-        Sampling interval in seconds.
+        Sampling interval in seconds (meta["time_bin_seconds"]).
     Ts_td : timedelta
-        Sampling interval as timedelta.
+        Sampling interval as a Python timedelta.
     """
     # --- extract required metadata ---
-    dt_sec = float(meta["time_bin_seconds"])      # time step size in seconds
-    dy_km  = float(meta["distance_bin_km"])       # distance step size in km
-    x0     = float(meta["xedge_start"])           # left edge (epoch seconds) of time bins
-    y0     = float(meta["yedge_start_km"])        # left edge (km) of range bins
+    dt_sec = float(meta["time_bin_seconds"])      # seconds per time bin
+    dy_km  = float(meta["distance_bin_km"])       # km per range bin
+    x0     = float(meta["xedge_start"])           # LEFT edge (epoch seconds) of time bin 0
+    y0     = float(meta["yedge_start_km"])        # LEFT edge (km) of range bin 0
 
     # --- enforce standardized shape ---
     hist2d = pad_img(hist2d, expected_shape=expected_shape, dtype=hist2d.dtype)
-    hist2d = cut_half(hist2d, expected_size=expected_size)  # cut time dimension in half
-    arr    = mad(hist2d, min_dev=min_dev).astype(np.float32)
 
-    # --- coordinate reconstruction ---
+    # Keep latter half (legacy behavior); expected_size must be even
+    if expected_size % 2 != 0:
+        raise ValueError(f"expected_size must be even, got {expected_size}")
+    hist2d = cut_half(hist2d, expected_size=expected_size)  # (T_half, H)
+
+    # Robust scaling
+    arr = mad(hist2d, min_dev=min_dev).astype(np.float32)
+
+    # --- coordinate reconstruction (TIME uses LEFT EDGES to match legacy) ---
     T, H = arr.shape
 
-    # Anchor times at noon of sDate (local reference)
-    s_dt = datetime.fromisoformat(meta["sDate"])
-    noon = s_dt.replace(hour=12, minute=0, second=0, microsecond=0)
-    t0   = noon.timestamp()
+    # Half-day index offset because we kept the latter half
+    k0 = expected_size // 2
 
-    arr_times_full = t0 + dt_sec * np.arange(T, dtype=np.float64)
+    # Time stamps on :00 (LEFT edges), not centers — matches run_edge_detect
+    # t[k] = x0 + dt * (k0 + k), k = 0..T-1
+    t_left_edges = x0 + dt_sec * (k0 + np.arange(T, dtype=np.float64))
 
-    # Uniform range bin centers (km)
-    ranges_full = (y0 + dy_km / 2.0) + dy_km * np.arange(expected_shape[1], dtype=np.float32)
+    # Range uses **centers** (this is independent from legacy minute alignment)
+    ranges_full = y0 + (dy_km / 2.0) + dy_km * np.arange(H, dtype=np.float64)
 
     # --- trimming (time and range axes) ---
-    xrt = math.floor(x_trim * T)      # left time trim
-    xl  = math.floor(x_trim * T)      # right time trim
-    yr  = math.floor(y_trim * H)      # bottom range trim
-    yl  = math.floor(y_trim * H)      # top range trim
+    xrt = math.floor(x_trim * T)   # left time trim  fraction
+    xl  = math.floor(x_trim * T)   # right time trim fraction
+    yr  = math.floor(y_trim * H)   # bottom range   fraction
+    yl  = math.floor(y_trim * H)   # top    range   fraction
 
+    # Trim data
     arr        = arr[xrt: T - xl, yr: H - yl]
-    arr_times  = arr_times_full[xrt: T - xl]
+    t_cut      = t_left_edges[xrt: T - xl]
     ranges_km  = ranges_full[yr: H - yl]
 
-    # --- sanitize values ---
-    arr = np.nan_to_num(arr, nan=0.0)
+    # Convert float epoch seconds -> datetime64[ns] without rounding drift
+    arr_times = (t_cut * 1e9).astype("int64").view("datetime64[ns]")
 
-    # Sampling interval
+    # --- sanitize & sampling interval ---
+    arr   = np.nan_to_num(arr, nan=0.0)
     Ts_sec = dt_sec
     Ts_td  = timedelta(seconds=Ts_sec)
 
     # --- post-processing ---
-    arr = gaussian_filter(arr.T, sigma=(sigma, sigma))   # smooth in both dims, using transpose
-    arr = rescale_to_int(arr, occurrence_n, i_max)     # rescale back to uint8
+    # Smooth after transpose so output is (range × time)
+    arr = gaussian_filter(arr.T, sigma=(sigma, sigma))
+    arr = rescale_to_int(arr, occurrence_n, i_max)  # -> uint8-like [0, i_max]
 
     return arr, arr_times, ranges_km, Ts_sec, Ts_td
+
 
 
 def pad_axis(
