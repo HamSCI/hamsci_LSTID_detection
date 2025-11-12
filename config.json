@@ -27,5 +27,19 @@
     "axis": 0,
     "lowess_window_size": 10,
     "max_abs_dev": 20
+  },
+
+  "fitting": {
+    "bandpass": true,
+    "lstid_T_hr_lim": [1, 4.5],
+    "roll_win": 15,
+    "stab_thresh": 0.05,
+    "margin_minutes": 30
+  },
+
+  "plotting": {
+    "ylim": [1000, 2000],
+    "cb_pad": 0.125,
+    "output_dir": "output/daily_plots"
   }
 }

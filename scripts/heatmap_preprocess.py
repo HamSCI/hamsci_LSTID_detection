@@ -69,6 +69,8 @@ import math
 from datetime import datetime, timedelta
 from scipy.ndimage import gaussian_filter
 
+from scripts.data_structures import PreprocessOutput
+
 def preprocess_heatmap(
     hist2d: np.ndarray,
     meta: Dict[str, Any],
@@ -83,7 +85,7 @@ def preprocess_heatmap(
     i_max: int,
     qs=None,
     **_: Any
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float, timedelta]:
+) -> PreprocessOutput:
     """
     Preprocess a 2D heatmap image (time × range bins).
 
@@ -102,59 +104,58 @@ def preprocess_heatmap(
 
     Returns
     -------
-    arr : np.ndarray
-        Preprocessed array, dtype uint8, shape (H_trim, T_trim) after transpose+smooth.
-    arr_times : np.ndarray
-        1D np.datetime64[ns] array of **bin LEFT EDGES** (legacy-compatible), len == T_trim.
-    ranges_km : np.ndarray
-        1D array of range bin **centers** in km, length == H_trim (trimmed).
-    Ts_sec : float
-        Sampling interval in seconds (meta["time_bin_seconds"]).
-    Ts_td : timedelta
-        Sampling interval as a Python timedelta.
+    PreprocessOutput
+        Dataclass containing:
+        - arr: Preprocessed array, dtype uint8, shape (H_trim, T_trim)
+        - arr_times: 1D np.datetime64[ns] array of bin LEFT EDGES
+        - ranges_km: 1D array of range bin centers in km
+        - Ts_sec: Sampling interval in seconds
+        - Ts_td: Sampling interval as timedelta
+        - intermediate: Dict with preprocessing steps:
+            - 'raw_hist2d': Original input before processing
+            - 'after_mad': After MAD normalization
+            - 'after_gaussian': After Gaussian smoothing (transposed)
+            - 'after_rescale': After rescaling to uint8
+        - meta: Preprocessing parameters and loader metadata
     """
+
+    
     # --- extract required metadata ---
-    dt_sec = float(meta["time_bin_seconds"])      # seconds per time bin
-    dy_km  = float(meta["distance_bin_km"])       # km per range bin
-    x0     = float(meta["xedge_start"])           # LEFT edge (epoch seconds) of time bin 0
-    y0     = float(meta["yedge_start_km"])        # LEFT edge (km) of range bin 0
+    dt_sec = float(meta["time_bin_seconds"])
+    dy_km  = float(meta["distance_bin_km"])
+    x0     = float(meta["xedge_start"])
+    y0     = float(meta["yedge_start_km"])
 
     # --- enforce standardized shape ---
     hist2d = pad_img(hist2d, expected_shape=expected_shape, dtype=hist2d.dtype)
 
-    # Keep latter half (legacy behavior); expected_size must be even
+    # Keep latter half
     if expected_size % 2 != 0:
         raise ValueError(f"expected_size must be even, got {expected_size}")
-    hist2d = cut_half(hist2d, expected_size=expected_size)  # (T_half, H)
+    hist2d = cut_half(hist2d, expected_size=expected_size)
+    
 
-    # Robust scaling
+    # Robust scaling - SAVE AFTER MAD
     arr = mad(hist2d, min_dev=min_dev).astype(np.float32)
 
-    # --- coordinate reconstruction (TIME uses LEFT EDGES to match legacy) ---
+    # --- coordinate reconstruction ---
     T, H = arr.shape
-
-    # Half-day index offset because we kept the latter half
     k0 = expected_size // 2
-
-    # Time stamps on :00 (LEFT edges), not centers — matches run_edge_detect
-    # t[k] = x0 + dt * (k0 + k), k = 0..T-1
     t_left_edges = x0 + dt_sec * (k0 + np.arange(T, dtype=np.float64))
-
-    # Range uses **centers** (this is independent from legacy minute alignment)
     ranges_full = y0 + (dy_km / 2.0) + dy_km * np.arange(H, dtype=np.float64)
 
-    # --- trimming (time and range axes) ---
-    xrt = math.floor(x_trim * T)   # left time trim  fraction
-    xl  = math.floor(x_trim * T)   # right time trim fraction
-    yr  = math.floor(y_trim * H)   # bottom range   fraction
-    yl  = math.floor(y_trim * H)   # top    range   fraction
+    # --- trimming ---
+    xrt = math.floor(x_trim * T)
+    xl  = math.floor(x_trim * T)
+    yr  = math.floor(y_trim * H)
+    yl  = math.floor(y_trim * H)
 
-    # Trim data
     arr        = arr[xrt: T - xl, yr: H - yl]
+    intermediate = {'raw_hist2d': arr.T.copy()}
+    
     t_cut      = t_left_edges[xrt: T - xl]
     ranges_km  = ranges_full[yr: H - yl]
 
-    # Convert float epoch seconds -> datetime64[ns] without rounding drift
     arr_times = (t_cut * 1e9).astype("int64").view("datetime64[ns]")
 
     # --- sanitize & sampling interval ---
@@ -163,11 +164,23 @@ def preprocess_heatmap(
     Ts_td  = timedelta(seconds=Ts_sec)
 
     # --- post-processing ---
-    # Smooth after transpose so output is (range × time)
+    # Smooth after transpose - SAVE AFTER GAUSSIAN
     arr = gaussian_filter(arr.T, sigma=(sigma, sigma))
-    arr = rescale_to_int(arr, occurrence_n, i_max)  # -> uint8-like [0, i_max]
+    intermediate['after_gaussian'] = arr.copy()
+    
+    # Rescale to int - final result
+    arr = rescale_to_int(arr, occurrence_n, i_max)
+    intermediate['after_rescale'] = arr.copy()
 
-    return arr, arr_times, ranges_km, Ts_sec, Ts_td
+    return PreprocessOutput(
+        arr=arr,
+        arr_times=arr_times,
+        ranges_km=ranges_km,
+        Ts_sec=Ts_sec,
+        Ts_td=Ts_td,
+        intermediate=intermediate,  # Now contains all 4 steps
+        meta=meta 
+    )
 
 
 

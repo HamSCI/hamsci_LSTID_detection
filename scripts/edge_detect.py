@@ -70,19 +70,12 @@ import statsmodels.api as sm
 from scipy.interpolate import CubicSpline
 from datetime import datetime, timedelta
 
+from scripts.data_structures import PreprocessOutput, EdgeDetectionOutput
 
-
-import numpy as np
-import polars as pl
-from datetime import datetime, timedelta
 
 def detect_edge(
-    date,                                # a datetime.date or datetime.datetime (local day start)
-    arr: np.ndarray,                     # preprocessed heatmap (time x range) - only used by measure_thresholds
-    arr_times: np.ndarray,               # datetime64[ns], length T, aligned to arr rows (native sampling)
-    ranges_km: np.ndarray,               # length H, aligned to arr cols
-    Ts_sec: float,                       # sampling interval seconds
-    Ts_td: "timedelta",
+    date: datetime,
+    preprocess_data: PreprocessOutput,
     *,
     qs: list[float],
     lower_cutoff: int,
@@ -91,10 +84,59 @@ def detect_edge(
     axis: int,
     lowess_window_size: int,
     max_abs_dev: int,
-    **_: dict
-) -> pl.DataFrame:
-
-    # 1) thresholds in index space
+    **_: Any
+) -> EdgeDetectionOutput:
+    """
+    Detect ionospheric edge from preprocessed heatmap.
+    
+    Pipeline
+    --------
+    1. Compute threshold lines at multiple quantiles
+    2. Select best line (minimum deviation after smoothing)
+    3. Interpolate NaNs to create edge_0
+    4. Window to analysis period (13:00-23:00)
+    5. Interpolate onto uniform time grid (12:00-24:00)
+    
+    Parameters
+    ----------
+    date : datetime
+        Processing date
+    preprocess_data : PreprocessOutput
+        Output from preprocess_heatmap
+    qs : list[float]
+        Quantiles for threshold detection (e.g., [0.4, 0.5, 0.6])
+    lower_cutoff : int
+        Minimum range index for valid detections
+    select_min : bool
+        Select minimum (True) or maximum (False) threshold
+    exact_thresh : bool
+        Use exact threshold matching
+    axis : int
+        Axis for threshold computation
+    lowess_window_size : int
+        LOWESS smoothing window size
+    max_abs_dev : int
+        Maximum absolute deviation for outlier filtering
+        
+    Returns
+    -------
+    EdgeDetectionOutput
+        Detected edges, quantile lines, and intermediate data
+    """
+    # Unpack preprocessing data
+    arr = preprocess_data.arr
+    arr_times = preprocess_data.arr_times
+    ranges_km = preprocess_data.ranges_km
+    Ts_sec = preprocess_data.Ts_sec
+    Ts_td = preprocess_data.Ts_td
+    
+    intermediate = {
+        **preprocess_data.intermediate,  # Has: raw_hist2d, after_mad, after_gaussian, after_rescale
+        'preprocessed_arr': arr,  # Duplicate of after_rescale (for plotting compatibility)
+        'preprocessed_times': arr_times,
+    }
+    
+    # --- 1) Compute thresholds in index space ---
     med_lines_idx, min_line_idx, minz_line_idx = measure_thresholds(
         arr,
         qs=qs,
@@ -105,77 +147,96 @@ def detect_edge(
         lowess_window_size=lowess_window_size,
         max_abs_dev=max_abs_dev,
     )
-
-    # 2) indices -> km
+    
+    # --- 2) Convert indices to km ---
     med_lines = [scale_km(x, ranges_km) for x in med_lines_idx]
-    min_line  = scale_km(min_line_idx, ranges_km)
+    min_line = scale_km(min_line_idx, ranges_km)
     minz_line = scale_km(minz_line_idx, ranges_km)
-
-    # 3) time limits
-    if isinstance(date, datetime):
-        day0 = datetime(date.year, date.month, date.day)
-    else:
-        day0 = datetime(date.year, date.month, date.day)
-    x_0   = day0 + timedelta(hours=12)  # 12:00
-    x_1   = day0 + timedelta(hours=24)  # 24:00 (next day 00:00)
-    win_0 = day0 + timedelta(hours=13)  # 13:00
-    win_1 = day0 + timedelta(hours=23)  # 23:00
-
-    # 4) native-sample DF (wide)
-    med_cols = [f"med_{q}" for q in qs]
-    base = pl.DataFrame({"Time": arr_times.astype("datetime64[ns]")})
-    for c, colvals in zip(med_cols, med_lines):
-        base = base.with_columns(pl.Series(c, np.asarray(colvals, dtype=float)))
-    base = base.with_columns(
-        pl.Series("min_line",  np.asarray(min_line,  dtype=float)),
-        pl.Series("minz_line", np.asarray(minz_line, dtype=float)),
+    
+    # Stack quantile lines: shape (T, n_quantiles)
+    quantile_lines = np.vstack(med_lines).T
+    quantile_values = np.array(qs)
+    
+    # --- 3) Build edge_0: interpolate NaNs in min_line ---
+    edge_0_vals = np.asarray(min_line, dtype=float).squeeze()
+    n = np.arange(edge_0_vals.size, dtype=float)
+    m = np.isfinite(edge_0_vals)
+    if m.any():
+        edge_0_vals[~m] = np.interp(n[~m], n[m], edge_0_vals[m])
+    edge_0_vals = np.nan_to_num(edge_0_vals, nan=0.0)
+    edge_0_times = np.asarray(arr_times, dtype="datetime64[ns]")
+    
+    # Store edge_0 in intermediate
+    intermediate['edge_0_vals'] = edge_0_vals
+    intermediate['edge_0_times'] = edge_0_times
+    
+    # --- 4) Define time windows ---
+    x_0 = np.datetime64(date + timedelta(hours=12), 'ns')    # 12:00
+    x_1 = np.datetime64(date + timedelta(hours=24), 'ns')    # 24:00 next day
+    win_0 = np.datetime64(date + timedelta(hours=13), 'ns')  # 13:00
+    win_1 = np.datetime64(date + timedelta(hours=23), 'ns')  # 23:00
+    
+    # --- 5) Window edge_0 to analysis period (13:00-23:00) ---
+    window_mask = (edge_0_times >= win_0) & (edge_0_times < win_1)
+    edge_win_times = edge_0_times[window_mask]
+    edge_win_vals = edge_0_vals[window_mask]
+    
+    intermediate['edge_win_times'] = edge_win_times
+    intermediate['edge_win_vals'] = edge_win_vals
+    intermediate['window_mask'] = window_mask
+    
+    # --- 6) Create uniform time grid (12:00-24:00) ---
+    step_ns = int(Ts_sec * 1e9)
+    t0_ns = x_0.astype('datetime64[ns]').astype(np.int64)
+    t1_ns = x_1.astype('datetime64[ns]').astype(np.int64)
+    grid_ns = np.arange(t0_ns, t1_ns + step_ns, step_ns, dtype=np.int64)
+    
+    # Don't exceed end time
+    if grid_ns[-1] > t1_ns:
+        grid_ns = grid_ns[:-1]
+    
+    edge_times = grid_ns.view('datetime64[ns]')
+    
+    # --- 7) Interpolate windowed edge onto uniform grid ---
+    xp = edge_win_times.astype('datetime64[ns]').astype(np.int64)
+    x = edge_times.astype('datetime64[ns]').astype(np.int64)
+    edge_positions = np.interp(
+        x, xp, edge_win_vals,
+        left=edge_win_vals[0],
+        right=edge_win_vals[-1]
+    )
+    
+    # --- 8) Build metadata ---
+    meta = {
+        **preprocess_data.meta,
+        'date': date,
+        'edge_params': {
+            'qs': qs,
+            'lower_cutoff': lower_cutoff,
+            'select_min': select_min,
+            'exact_thresh': exact_thresh,
+            'axis': axis,
+            'lowess_window_size': lowess_window_size,
+            'max_abs_dev': max_abs_dev,
+        },
+        'time_limits': {
+            'xlim': (x_0, x_1),
+            'winlim': (win_0, win_1),
+        },
+    }
+    
+    return EdgeDetectionOutput(
+        edge_times=edge_times,
+        edge_positions=edge_positions,
+        quantile_lines=quantile_lines,
+        quantile_values=quantile_values,
+        min_line=min_line,
+        minz_line=minz_line,
+        ranges_km=ranges_km,
+        intermediate=intermediate,
+        meta=meta,
     )
 
-    # edge_0: interpolate internal NaNs on native sampling; unmatched remain null -> then 0.0
-    base = base.with_columns(
-        pl.col("min_line").interpolate().fill_null(0.0).alias("edge_0")
-    )
-
-    # --- 5) uniform grid 12:00→24:00 (left-closed) ---
-    dt_s = Ts_sec if Ts_sec is not None else float(Ts_td.total_seconds())
-    step_ns = int(dt_s * 1e9)
-
-    t0_ns = np.int64(np.datetime64(x_0, 'ns'))
-    t1_ns = np.int64(np.datetime64(x_1, 'ns'))
-
-    grid_ns = np.arange(t0_ns, t1_ns, step_ns, dtype=np.int64)  # left-closed
-    time_np = grid_ns.view('datetime64[ns]')
-
-    grid = pl.DataFrame({"Time": time_np})
-
-    # --- 6) join + interpolate + window zeroing (clean) ---
-    df = (
-        grid.join(
-            base.select(["Time", "edge_0", "min_line", "minz_line", *med_cols]),
-            on="Time",
-            how="left",
-        )
-        .with_columns(
-            pl.col("edge_0")
-            .interpolate()
-            .fill_null(strategy="forward")
-            .fill_null(strategy="backward")
-            .alias("edge_1")
-        )
-        .with_columns(
-            pl.when((pl.col("Time") >= win_0) & (pl.col("Time") < win_1))
-            .then(pl.col("edge_1"))
-            .otherwise(0.0)
-            .alias("sg_edge"),
-            pl.col("Time").cast(pl.Int64).alias("epoch_ns"),
-        )
-    )
-
-    pl.Config.set_tbl_rows(1_000_000)     # max rows to show
-    pl.Config.set_tbl_cols(10_000)        # max cols to show
-    pl.Config.set_tbl_width_chars(10_000) # allow super-wide tables
-    print(df)
-    return df, {"xlim": (x_0, x_1), "winlim": (win_0, win_1), "qs": qs}
 
 
 def occurrence_max(arr, n):
