@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from typing import Tuple
+from matplotlib.colors import LogNorm
 
 from scripts.data_structures import FitOutput
 
@@ -25,328 +25,6 @@ def fmt_xaxis(ax, xlim, label=True):
     if label:
         ax.set_xlabel('Time [UTC]')
     ax.set_xlim(xlim)
-
-
-def plot_intermediate_heatmap(ax, arr, arr_times, ranges_km, title, cmap, 
-                              ylim, xlim, cb_label, add_contours):
-    """
-    Generic heatmap plotter for any intermediate array.
-    
-    NO DEFAULTS - all parameters must be provided explicitly.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    arr : np.ndarray
-        2D array to plot
-    arr_times : np.ndarray
-        Time coordinates
-    ranges_km : np.ndarray
-        Range coordinates
-    title : str
-        Panel title
-    cmap : str
-        Colormap name
-    ylim : tuple
-        Y-axis limits
-    xlim : tuple
-        X-axis limits
-    cb_label : str
-        Colorbar label
-    add_contours : bool
-        Whether to overlay contours
-    """
-    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap=cmap, 
-                         shading='nearest', rasterized=True)
-    
-    if add_contours:
-        levels = np.linspace(np.nanmin(arr), np.nanmax(arr), 15)
-        ax.contour(arr_times, ranges_km, arr, levels=levels, 
-                   colors='k', linewidths=0.5)
-    
-    plt.colorbar(mpbl, ax=ax, label=cb_label)
-    ax.set_title(title, loc='left')
-    ax.set_ylabel('Range [km]')
-    ax.set_ylim(ylim)
-    fmt_xaxis(ax, xlim)
-
-
-def plot_heatmap(ax, fit_result: FitOutput, cb_pad: float, ylim: Tuple[float, float]):
-    """
-    Plot preprocessed heatmap.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    cb_pad : float
-        Colorbar padding
-    ylim : tuple
-        Y-axis limits (min_km, max_km)
-    """
-    # Extract data from fit_result
-    arr = fit_result.intermediate['preprocessed_arr']
-    arr_times = fit_result.intermediate['preprocessed_times']
-    ranges_km = fit_result.edge_data.ranges_km
-    date = fit_result.meta['date']
-    xlim = fit_result.meta['time_limits']['xlim']
-    
-    # Plot
-    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap='plasma')
-    plt.colorbar(mpbl, ax=ax, aspect=10, pad=cb_pad, 
-                 label='Scaled Amateur Radio Data')
-    
-    ax.set_title(f'| {date.strftime("%Y-%m-%d")} |')
-    ax.set_ylabel('Range [km]')
-    ax.set_ylim(ylim)
-    
-    fmt_xaxis(ax, xlim)
-
-
-def plot_heatmap_with_edge(ax, fit_result: FitOutput, cb_pad: float, ylim: Tuple[float, float]):
-    """
-    Plot heatmap with detected edge overlay.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    cb_pad : float
-        Colorbar padding
-    ylim : tuple
-        Y-axis limits (min_km, max_km)
-    """
-    # Extract data from fit_result
-    arr = fit_result.intermediate['preprocessed_arr']
-    arr_times = fit_result.intermediate['preprocessed_times']
-    ranges_km = fit_result.edge_data.ranges_km
-    edge_0_times = fit_result.intermediate['edge_0_times']
-    edge_0_vals = fit_result.intermediate['edge_0_vals']
-    stability_times = fit_result.edge_data.edge_times
-    stability = fit_result.stability
-    xlim = fit_result.meta['time_limits']['xlim']
-    winlim = fit_result.meta['time_limits']['winlim']
-    fitWinLim = fit_result.meta.get('fitWinLim', (None, None))
-    
-    # Heatmap
-    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap='plasma')
-    plt.colorbar(mpbl, ax=ax, aspect=10, pad=cb_pad,
-                 label='Scaled Amateur Radio Data')
-    
-    # Detected edge
-    ax.plot(edge_0_times, edge_0_vals, lw=2, label='Detected Edge')
-    
-    # Sin fit if available
-    if fit_result.sin_params:
-        fit_times = fit_result.fit_times
-        # Reconstruct full edge by adding polynomial back
-        full_fit = fit_result.sin_fit + fit_result.poly_fit
-        ax.plot(fit_times, full_fit, label='Sin Fit', 
-                color='white', lw=3, ls='--')
-    
-    # Stability on secondary axis
-    ax2 = ax.twinx()
-    ax2.plot(stability_times, stability, lw=2, color='0.5')
-    ax2.grid(False)
-    ax2.set_ylabel('Edge Coef. of Variation\n(Grey Line)')
-    
-    # Window limits
-    for wl in winlim:
-        ax.axvline(wl, color='0.8', ls='--', lw=2)
-    
-    # Fit window limits
-    if fitWinLim[0] is not None:
-        for wl in fitWinLim:
-            ax.axvline(wl, color='lime', ls='--', lw=2)
-    
-    ax.legend(loc='upper center', fontsize='x-small', ncols=4)
-    ax.set_ylabel('Range [km]')
-    ax.set_ylim(ylim)
-    
-    fmt_xaxis(ax, xlim)
-
-
-def plot_detrended_fit(ax, fit_result: FitOutput):
-    """
-    Plot detrended edge data with sinusoidal fit.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    """
-    if len(fit_result.fit_times) == 0:
-        ax.text(0.5, 0.5, 'No fit available', 
-                ha='center', va='center', transform=ax.transAxes)
-        return
-    
-    # Extract data
-    fit_times = fit_result.fit_times
-    data_detrend = fit_result.data_detrend
-    sin_fit = fit_result.sin_fit
-    xlim = fit_result.meta['time_limits']['xlim']
-    fitWinLim = fit_result.meta.get('fitWinLim', (None, None))
-    
-    # Detrended data
-    ax.plot(fit_times, data_detrend, 
-            label='Detrended Edge', marker='o', alpha=0.6)
-    
-    # Sin fit
-    if fit_result.sin_params:
-        ax.plot(fit_times, sin_fit, 
-                label='Sin Fit', color='red', lw=3, ls='--')
-    
-    # Fit window limits
-    if fitWinLim[0] is not None:
-        for wl in fitWinLim:
-            ax.axvline(wl, color='lime', ls='--', lw=2)
-    
-    ax.set_ylabel('Range [km]')
-    ax.legend(loc='lower right', fontsize='x-small', ncols=4)
-    
-    fmt_xaxis(ax, xlim)
-
-
-def plot_fit_parameters(ax, fit_result: FitOutput):
-    """
-    Display fit parameters as text.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    """
-    ax.grid(False)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    
-    fontdict = {'weight': 'normal', 'family': 'monospace'}
-    
-    # Polynomial fit parameters
-    txt = ['2nd Deg Poly Fit', '(Used for Detrending)']
-    for key, val in fit_result.poly_params.items():
-        if key == 'r2':
-            txt.append(f'{key}: {val:0.2f}')
-        else:
-            txt.append(f'{key}: {val:0.1f}')
-    ax.text(0.01, 0.95, '\n'.join(txt), fontdict=fontdict, va='top')
-    
-    # Sinusoid fit parameters
-    txt = ['Sinusoid Fit']
-    for key, val in fit_result.sin_params.items():
-        if key == 'r2':
-            txt.append(f'{key}: {val:0.2f}')
-        elif key == 'T_hr_guess':
-            txt.append(f'{key}: {val:0.1f}')
-        else:
-            txt.append(f'{key}: {val:0.1f}')
-    ax.text(0.30, 0.95, '\n'.join(txt), fontdict=fontdict, va='top')
-
-
-def plot_quantile_lines(ax, fit_result: FitOutput):
-    """
-    Plot quantile threshold lines.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    """
-    times = fit_result.intermediate['edge_0_times']
-    quantile_lines = fit_result.edge_data.quantile_lines
-    quantile_values = fit_result.edge_data.quantile_values
-    xlim = fit_result.meta['time_limits']['xlim']
-    
-    for i, q in enumerate(quantile_values):
-        ax.plot(times, quantile_lines[:, i], label=f'Q={q}', alpha=0.7)
-    
-    ax.legend(loc='best', fontsize='small')
-    ax.set_ylabel('Range [km]')
-    ax.set_title('Quantile Threshold Lines')
-    
-    fmt_xaxis(ax, xlim)
-
-
-def plot_stability(ax, fit_result: FitOutput):
-    """
-    Plot stability (coefficient of variation).
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    """
-    times = fit_result.edge_data.edge_times
-    stability = fit_result.stability
-    xlim = fit_result.meta['time_limits']['xlim']
-    fitWinLim = fit_result.meta.get('fitWinLim', (None, None))
-    
-    ax.plot(times, stability, lw=2, color='blue')
-    
-    # Threshold line
-    stab_thresh = fit_result.meta.get('fit_params', {}).get('stab_thresh', 0.05)
-    ax.axhline(stab_thresh, color='red', ls='--', lw=2, 
-               label=f'Threshold ({stab_thresh})')
-    
-    # Fit window
-    if fitWinLim[0] is not None:
-        for wl in fitWinLim:
-            ax.axvline(wl, color='lime', ls='--', lw=2)
-    
-    ax.set_ylabel('Coefficient of Variation')
-    ax.set_title('Edge Stability')
-    ax.legend(loc='best', fontsize='small')
-    
-    fmt_xaxis(ax, xlim)
-
-
-def plot_edge_comparison(ax, fit_result: FitOutput):
-    """
-    Compare edge_0 (full) vs windowed edge.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to plot on
-    fit_result : FitOutput
-        Complete pipeline result
-    """
-    # Full edge
-    edge_0_times = fit_result.intermediate['edge_0_times']
-    edge_0_vals = fit_result.intermediate['edge_0_vals']
-    ax.plot(edge_0_times, edge_0_vals, label='Full Edge', alpha=0.5)
-    
-    # Windowed edge
-    edge_win_times = fit_result.intermediate['edge_win_times']
-    edge_win_vals = fit_result.intermediate['edge_win_vals']
-    ax.plot(edge_win_times, edge_win_vals, label='Windowed Edge', lw=2)
-    
-    # Final interpolated edge
-    edge_times = fit_result.edge_data.edge_times
-    edge_positions = fit_result.edge_data.edge_positions
-    ax.plot(edge_times, edge_positions, label='Interpolated', 
-            ls='--', alpha=0.7)
-    
-    xlim = fit_result.meta['time_limits']['xlim']
-    
-    ax.legend(loc='best', fontsize='small')
-    ax.set_ylabel('Range [km]')
-    ax.set_title('Edge Extraction Steps')
-    
-    fmt_xaxis(ax, xlim)
 
 
 def plot_bandpass_filtered(ax, fit_result: FitOutput):
@@ -378,7 +56,7 @@ def plot_bandpass_filtered(ax, fit_result: FitOutput):
     ax.legend(loc='lower right', fontsize='x-small', ncols=4)
 
 
-def plot_multiple_sin_fits(ax, fit_result: FitOutput):
+def plot_multiple_sin_fits(ax, ax_leg, fit_result: FitOutput):
     """
     Panel (e): Sinusoidal Fit to Bandpass Filtered Edge (multiple fits)
     
@@ -436,8 +114,79 @@ def plot_multiple_sin_fits(ax, fit_result: FitOutput):
     fmt_xaxis(ax, xlim)
     ax.set_title("(e) Sinusodial Fit to Bandpass Filtered Edge", loc='left')
     ax.set_ylabel('Range [km]')
-    ax.legend(loc='lower right', fontsize='small', ncols=4)
+    handles, labels = ax.get_legend_handles_labels()
+    ax_leg.axis('off')
+    ax_leg.legend(handles, labels, loc='center', fontsize=12)
 
+def plot_selected_sin_fit(ax, fit_result: FitOutput):
+    """
+    Panel (e): Selected sinusoidal fit to bandpass filtered edge
+    
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis to plot on
+    ax_leg : matplotlib.axes.Axes
+        Legend axis
+    fit_result : FitOutput
+        Complete pipeline result
+    """
+    from datetime import datetime
+    from scripts.sinusoid_fitting import sinusoid
+
+    fit_times = fit_result.fit_times
+    bandpass_edge = fit_result.data_detrend
+    selected_sin_fit = fit_result.all_sin_fits
+    date = fit_result.meta['date']
+    xlim = fit_result.meta['time_limits']['xlim']
+    fit_window_limits = fit_result.meta.get('fitWinLim', (None, None))
+
+    if len(fit_times) > 0:
+        ax.plot(
+            fit_times,
+            bandpass_edge,
+            color='C0',
+            lw=2,
+            label='Bandpass Filtered Edge'
+        )
+
+        if len(selected_sin_fit) > 0:
+            fit_params = selected_sin_fit[0]
+
+            date_midnight = datetime(date.year, date.month, date.day)
+            tt_sec = np.array([
+                (t - np.datetime64(date_midnight, 'ns')).astype('timedelta64[s]').astype(float)
+                for t in fit_times
+            ])
+
+            selected_fit_vals = sinusoid(
+                tt_sec,
+                T_hr=fit_params['T_hr'],
+                amplitude_km=fit_params['amplitude_km'],
+                phase_hr=fit_params['phase_hr'],
+                offset_km=fit_params['offset_km'],
+                slope_kmph=fit_params['slope_kmph']
+            )
+
+            ax.plot(
+                fit_times,
+                selected_fit_vals,
+                color='red',
+                lw=3,
+                ls='--',
+                alpha=1.0,
+                label='Selected Sinusoidal Fit'
+            )
+
+        if fit_window_limits[0] is not None:
+            for wl in fit_window_limits:
+                ax.axvline(wl, color='lime', ls='--', lw=2)
+
+    fmt_xaxis(ax, xlim)
+    ax.set_title("(e) Selected Sinusoidal Fit to Bandpass Filtered Edge", loc='left')
+    ax.set_ylabel('Range [km]')
+
+    ax.legend(loc='lower right', fontsize='x-small', ncols=4)
 
 def plot_sin_fit_table(ax, fit_result: FitOutput):
     """
@@ -523,7 +272,7 @@ def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput):
     
     # Plot polynomial fit reconstructed
     if len(fit_times) > 0:
-        ax.plot(fit_times, data_detrend + poly_fit, 
+        ax.plot(fit_times, poly_fit, 
                 label='Polynomial Fit', color='white', lw=3, ls='--')
     ax.plot(edge_0_times, edge_0_vals, lw=2, label='Detected Edge', color='cyan')
     
@@ -532,7 +281,7 @@ def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput):
             ax.axvline(wl, color='lime', ls='--', lw=2)
     
     ax.set_title("(b) Polynomial Fit", loc='left')
-    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Count')
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
     ax.set_ylabel('Range [km]')
@@ -582,13 +331,11 @@ def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput):
             ax.axvline(wl, color='lime', ls='--', lw=2)
     
     ax.set_title("(a) Coefficient of Variance Selection", loc='left')
-    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Count')
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
     ax.set_ylabel('Range [km]')
     ax.set_ylim(900, 1600)
-    ax.text(0.5, 1.12, date.strftime('%Y-%m-%d'), transform=ax.transAxes,
-            ha='center', va='bottom', fontsize=25, fontweight='bold')
 
 
 def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput):
@@ -624,7 +371,7 @@ def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput):
         for wl in fitWinLim:
             ax.axvline(wl, color='lime', ls='--', lw=2)
     
-    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Count')
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
     fmt_xaxis(ax, xlim)
     ax.set_title("(g) Polynomial Detrend + Sin Fit", loc='left')
     ax.set_ylabel('Range [km]')
@@ -661,3 +408,180 @@ def plot_detrended_before_bandpass(ax, fit_result: FitOutput):
     fmt_xaxis(ax, xlim)
     ax.set_ylabel('Range [km]')
     ax.legend(loc='lower right', fontsize='x-small', ncols=4)
+
+def plot_spot_location_heatmap(ax, ax_cb, df, date, *, label='a'):
+    """
+    Spot density by TX-RX midpoint location.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Cartopy GeoAxes (must be created with projection=ccrs.PlateCarree())
+    ax_cb : matplotlib.axes.Axes
+        Colorbar axis
+    df : polars.DataFrame
+        Spot dataframe with mid_lat and mid_long columns
+    date : datetime
+        Processing date for title
+    label : str
+        Panel label character (e.g. 'a', 'b')
+    """
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+
+    lats = df['mid_lat'].to_numpy()
+    lons = df['mid_long'].to_numpy()
+
+    lat_bins = np.linspace(lats.min(), lats.max(), 200)
+    lon_bins = np.linspace(lons.min(), lons.max(), 200)
+
+    hist, lat_edges, lon_edges = np.histogram2d(lats, lons, bins=[lat_bins, lon_bins])
+
+    mpbl = ax.pcolormesh(lon_edges[:-1], lat_edges[:-1], hist,
+                         cmap='inferno', shading='nearest', rasterized=True,
+                         norm=LogNorm(vmin=1, clip=True),
+                         transform=ccrs.PlateCarree())
+
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
+    ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='white')
+
+    avg_lat = float(lats.mean())
+    avg_lon = float(lons.mean())
+    ax.plot(avg_lon, avg_lat, marker='*', markersize=14, color='cyan',
+            markeredgecolor='black', markeredgewidth=0.5,
+            transform=ccrs.PlateCarree(),
+            label=f'Mean ({avg_lat:.1f}°N, {avg_lon:.1f}°E)')
+
+    ax.set_extent([lons.min(), lons.max(), lats.min(), lats.max()],
+                  crs=ccrs.PlateCarree())
+
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label=r'log(spots bin$^{-1}$)')
+
+    ax.set_title(f"({label}) Spot Density by Midpoint Location",
+                 loc='left', fontweight='bold')
+    ax.set_xlabel('Longitude [°]')
+    ax.set_ylabel('Latitude [°]')
+    ax.legend(loc='lower right', fontsize='x-small')
+
+
+def plot_raw_histogram(ax, ax_cb, fit_result: FitOutput, ylim, *, label='b'):
+    """
+    Raw trimmed 2D histogram panel.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    ax_cb : matplotlib.axes.Axes
+        Colorbar axis
+    fit_result : FitOutput
+    ylim : tuple
+    label : str
+        Panel label character
+    """
+    raw_hist  = fit_result.intermediate['raw_hist2d']
+    arr_times = fit_result.intermediate['preprocessed_times']
+    ranges_km = fit_result.edge_data.ranges_km
+    date      = fit_result.meta['date']
+    xlim      = fit_result.meta['time_limits']['xlim']
+
+    mpbl = ax.pcolormesh(arr_times, ranges_km, raw_hist, cmap='plasma',
+                         shading='nearest', rasterized=True)
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label=r'spots bin$^{-1}$')
+    ax.set_title(f"({label}) Raw Trimmed 2D Histogram",
+                 loc='left', fontweight='bold')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+    fmt_xaxis(ax, xlim)
+
+
+def plot_gaussian_filtered(ax, ax_cb, fit_result: FitOutput, ylim, *, label='c'):
+    """
+    Gaussian filtered heatmap panel.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    ax_cb : matplotlib.axes.Axes
+        Colorbar axis
+    fit_result : FitOutput
+    ylim : tuple
+    label : str
+        Panel label character
+    """
+    gaussian_arr = fit_result.intermediate['after_gaussian']
+    arr_times    = fit_result.intermediate['preprocessed_times']
+    ranges_km    = fit_result.edge_data.ranges_km
+    xlim         = fit_result.meta['time_limits']['xlim']
+
+    mpbl = ax.pcolormesh(arr_times, ranges_km, gaussian_arr, cmap='plasma',
+                         shading='nearest', rasterized=True)
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
+    ax.set_title(f"({label}) Smoothed with 2D Gaussian Filter (σ = 4.2)",
+                 loc='left', fontweight='bold')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+    fmt_xaxis(ax, xlim)
+
+
+def plot_rescaled_contours(ax, ax_cb, fit_result: FitOutput, ylim, *, label='d'):
+    """
+    8-bit rescaled heatmap with structural contours panel.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    ax_cb : matplotlib.axes.Axes
+        Colorbar axis
+    fit_result : FitOutput
+    ylim : tuple
+    label : str
+        Panel label character
+    """
+    rescale_arr = fit_result.intermediate['after_rescale']
+    arr_times   = fit_result.intermediate['preprocessed_times']
+    ranges_km   = fit_result.edge_data.ranges_km
+    xlim        = fit_result.meta['time_limits']['xlim']
+
+    mpbl = ax.pcolormesh(arr_times, ranges_km, rescale_arr, cmap='plasma',
+                         shading='nearest', rasterized=True)
+    levels = np.linspace(np.nanmin(rescale_arr), np.nanmax(rescale_arr), 15)
+    ax.contour(arr_times, ranges_km, rescale_arr, levels=levels,
+               colors='k', linewidths=0.5)
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
+    ax.set_title(f"({label}) Normalized 8-bit Image with Structural Contours",
+                 loc='left', fontweight='bold')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+    fmt_xaxis(ax, xlim)
+
+
+def plot_edge_overlay(ax, ax_cb, fit_result: FitOutput, ylim, *, label='e'):
+    """
+    Greyscale heatmap with detected edge overlay panel.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    ax_cb : matplotlib.axes.Axes
+        Colorbar axis
+    fit_result : FitOutput
+    ylim : tuple
+    label : str
+        Panel label character
+    """
+    rescale_arr  = fit_result.intermediate['after_rescale']
+    arr_times    = fit_result.intermediate['preprocessed_times']
+    ranges_km    = fit_result.edge_data.ranges_km
+    edge_0_times = fit_result.intermediate['edge_0_times']
+    edge_0_vals  = fit_result.intermediate['edge_0_vals']
+    xlim         = fit_result.meta['time_limits']['xlim']
+
+    mpbl = ax.pcolormesh(arr_times, ranges_km, rescale_arr, cmap='Greys_r',
+                         shading='nearest', rasterized=True)
+    ax.plot(edge_0_times, edge_0_vals, lw=2, color='cyan', label='Detected Edge')
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
+    ax.set_title(f"({label}) Edge Detection Overlay", loc='left', fontweight='bold')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+    ax.legend(loc='upper center', fontsize='x-small')
+    fmt_xaxis(ax, xlim)

@@ -137,9 +137,11 @@ if __name__ == "__main__":
         else:
             log.warning("  → Fit failed - no stable region found")
         
-        log.info("Creating stack_plot_1...")
-        stack_plot_1(fit_result, **plot_params)
-        stack_plot_2(fit_result, **plot_params)
+        log.info("Creating stack plots...")
+        stack_plot_preprocess(fit_result, df, **plot_params)
+        stack_plot_sinfit_v1(fit_result, **plot_params)
+        stack_plot_sinfit_v2(fit_result, **plot_params)
+        stack_plot_sinfit_v3(fit_result, **plot_params)
         
         log.info(f"Processing complete for {date_str}\n")
     

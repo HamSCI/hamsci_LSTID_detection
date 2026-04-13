@@ -481,3 +481,155 @@ def plot_sin_fit_analysis(all_results,
         os.mkdir(output_dir)
     print('   Saving: {!s}'.format(png_fpath))
     fig.savefig(png_fpath,bbox_inches='tight')
+
+
+# ============================================================
+# Functions moved from scripts/plot_subplots.py
+# Superseded by more specific implementations — kept for reference
+# ============================================================
+
+def plot_intermediate_heatmap(ax, arr, arr_times, ranges_km, title, cmap,
+                              ylim, xlim, cb_label, add_contours):
+    """Generic heatmap plotter. Superseded by dedicated panel functions."""
+    import numpy as np
+    import matplotlib.pyplot as plt
+    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap=cmap,
+                         shading='nearest', rasterized=True)
+    if add_contours:
+        levels = np.linspace(np.nanmin(arr), np.nanmax(arr), 15)
+        ax.contour(arr_times, ranges_km, arr, levels=levels,
+                   colors='k', linewidths=0.5)
+    plt.colorbar(mpbl, ax=ax, label=cb_label)
+    ax.set_title(title, loc='left')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+
+
+def plot_heatmap(ax, fit_result, cb_pad, ylim):
+    """Basic preprocessed heatmap. Superseded by plot_raw_histogram."""
+    import matplotlib.pyplot as plt
+    arr       = fit_result.intermediate['preprocessed_arr']
+    arr_times = fit_result.intermediate['preprocessed_times']
+    ranges_km = fit_result.edge_data.ranges_km
+    xlim      = fit_result.meta['time_limits']['xlim']
+    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap='plasma')
+    plt.colorbar(mpbl, ax=ax, aspect=10, pad=cb_pad,
+                 label='Scaled Amateur Radio Data')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+
+
+def plot_heatmap_with_edge(ax, fit_result, cb_pad, ylim):
+    """Heatmap with edge overlay. Superseded by plot_edge_overlay."""
+    import matplotlib.pyplot as plt
+    arr           = fit_result.intermediate['preprocessed_arr']
+    arr_times     = fit_result.intermediate['preprocessed_times']
+    ranges_km     = fit_result.edge_data.ranges_km
+    edge_0_times  = fit_result.intermediate['edge_0_times']
+    edge_0_vals   = fit_result.intermediate['edge_0_vals']
+    stability_times = fit_result.edge_data.edge_times
+    stability     = fit_result.stability
+    xlim          = fit_result.meta['time_limits']['xlim']
+    winlim        = fit_result.meta['time_limits']['winlim']
+    fitWinLim     = fit_result.meta.get('fitWinLim', (None, None))
+    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap='plasma')
+    plt.colorbar(mpbl, ax=ax, aspect=10, pad=cb_pad,
+                 label='Scaled Amateur Radio Data')
+    ax.plot(edge_0_times, edge_0_vals, lw=2, label='Detected Edge')
+    if fit_result.sin_params:
+        full_fit = fit_result.sin_fit + fit_result.poly_fit
+        ax.plot(fit_result.fit_times, full_fit, label='Sin Fit',
+                color='white', lw=3, ls='--')
+    ax2 = ax.twinx()
+    ax2.plot(stability_times, stability, lw=2, color='0.5')
+    ax2.grid(False)
+    ax2.set_ylabel('Edge Coef. of Variation\n(Grey Line)')
+    for wl in winlim:
+        ax.axvline(wl, color='0.8', ls='--', lw=2)
+    if fitWinLim[0] is not None:
+        for wl in fitWinLim:
+            ax.axvline(wl, color='lime', ls='--', lw=2)
+    ax.legend(loc='upper center', fontsize='x-small', ncols=4)
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+
+
+def plot_detrended_fit(ax, fit_result):
+    """Detrended edge + sin fit. Superseded by plot_selected_sin_fit."""
+    if len(fit_result.fit_times) == 0:
+        ax.text(0.5, 0.5, 'No fit available',
+                ha='center', va='center', transform=ax.transAxes)
+        return
+    fit_times    = fit_result.fit_times
+    data_detrend = fit_result.data_detrend
+    sin_fit      = fit_result.sin_fit
+    fitWinLim    = fit_result.meta.get('fitWinLim', (None, None))
+    ax.plot(fit_times, data_detrend, label='Detrended Edge', marker='o', alpha=0.6)
+    if fit_result.sin_params:
+        ax.plot(fit_times, sin_fit, label='Sin Fit', color='red', lw=3, ls='--')
+    if fitWinLim[0] is not None:
+        for wl in fitWinLim:
+            ax.axvline(wl, color='lime', ls='--', lw=2)
+    ax.set_ylabel('Range [km]')
+    ax.legend(loc='lower right', fontsize='x-small', ncols=4)
+
+
+def plot_fit_parameters(ax, fit_result):
+    """Text display of fit params. Superseded by plot_sin_fit_table."""
+    ax.grid(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    fontdict = {'weight': 'normal', 'family': 'monospace'}
+    txt = ['2nd Deg Poly Fit', '(Used for Detrending)']
+    for key, val in fit_result.poly_params.items():
+        txt.append(f'{key}: {val:0.2f}' if key == 'r2' else f'{key}: {val:0.1f}')
+    ax.text(0.01, 0.95, '\n'.join(txt), fontdict=fontdict, va='top')
+    txt = ['Sinusoid Fit']
+    for key, val in fit_result.sin_params.items():
+        txt.append(f'{key}: {val:0.2f}' if key == 'r2' else f'{key}: {val:0.1f}')
+    ax.text(0.30, 0.95, '\n'.join(txt), fontdict=fontdict, va='top')
+
+
+def plot_quantile_lines(ax, fit_result):
+    """Quantile threshold lines. Never wired into a stack plot."""
+    times           = fit_result.intermediate['edge_0_times']
+    quantile_lines  = fit_result.edge_data.quantile_lines
+    quantile_values = fit_result.edge_data.quantile_values
+    for i, q in enumerate(quantile_values):
+        ax.plot(times, quantile_lines[:, i], label=f'Q={q}', alpha=0.7)
+    ax.legend(loc='best', fontsize='small')
+    ax.set_ylabel('Range [km]')
+    ax.set_title('Quantile Threshold Lines')
+
+
+def plot_stability(ax, fit_result):
+    """Standalone stability/CV plot. Never wired into a stack plot."""
+    times       = fit_result.edge_data.edge_times
+    stability   = fit_result.stability
+    fitWinLim   = fit_result.meta.get('fitWinLim', (None, None))
+    stab_thresh = fit_result.meta.get('fit_params', {}).get('stab_thresh', 0.05)
+    ax.plot(times, stability, lw=2, color='blue')
+    ax.axhline(stab_thresh, color='red', ls='--', lw=2,
+               label=f'Threshold ({stab_thresh})')
+    if fitWinLim[0] is not None:
+        for wl in fitWinLim:
+            ax.axvline(wl, color='lime', ls='--', lw=2)
+    ax.set_ylabel('Coefficient of Variation')
+    ax.set_title('Edge Stability')
+    ax.legend(loc='best', fontsize='small')
+
+
+def plot_edge_comparison(ax, fit_result):
+    """Full vs windowed vs interpolated edge comparison. Never wired into a stack plot."""
+    edge_0_times   = fit_result.intermediate['edge_0_times']
+    edge_0_vals    = fit_result.intermediate['edge_0_vals']
+    edge_win_times = fit_result.intermediate['edge_win_times']
+    edge_win_vals  = fit_result.intermediate['edge_win_vals']
+    edge_times     = fit_result.edge_data.edge_times
+    edge_positions = fit_result.edge_data.edge_positions
+    ax.plot(edge_0_times, edge_0_vals, label='Full Edge', alpha=0.5)
+    ax.plot(edge_win_times, edge_win_vals, label='Windowed Edge', lw=2)
+    ax.plot(edge_times, edge_positions, label='Interpolated', ls='--', alpha=0.7)
+    ax.legend(loc='best', fontsize='small')
+    ax.set_ylabel('Range [km]')
+    ax.set_title('Edge Extraction Steps')

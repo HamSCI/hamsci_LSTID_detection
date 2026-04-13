@@ -112,9 +112,9 @@ def preprocess_heatmap(
         - Ts_sec: Sampling interval in seconds
         - Ts_td: Sampling interval as timedelta
         - intermediate: Dict with preprocessing steps:
-            - 'raw_hist2d': Original input before processing
+            - 'raw_hist2d': Raw trimmed histogram before any normalization
             - 'after_mad': After MAD normalization
-            - 'after_gaussian': After Gaussian smoothing (transposed)
+            - 'after_gaussian': After Gaussian smoothing
             - 'after_rescale': After rescaling to uint8
         - meta: Preprocessing parameters and loader metadata
     """
@@ -135,11 +135,8 @@ def preprocess_heatmap(
     hist2d = cut_half(hist2d, expected_size=expected_size)
     
 
-    # Robust scaling - SAVE AFTER MAD
-    arr = mad(hist2d, min_dev=min_dev).astype(np.float32)
-
     # --- coordinate reconstruction ---
-    T, H = arr.shape
+    T, H = hist2d.shape
     k0 = expected_size // 2
     t_left_edges = x0 + dt_sec * (k0 + np.arange(T, dtype=np.float64))
     ranges_full = y0 + (dy_km / 2.0) + dy_km * np.arange(H, dtype=np.float64)
@@ -150,8 +147,13 @@ def preprocess_heatmap(
     yr  = math.floor(y_trim * H)
     yl  = math.floor(y_trim * H)
 
-    arr        = arr[xrt: T - xl, yr: H - yl]
-    intermediate = {'raw_hist2d': arr.T.copy()}
+    # Save raw histogram before any normalization
+    intermediate = {'raw_hist2d': hist2d[xrt: T - xl, yr: H - yl].T.copy()}
+
+    # Robust scaling
+    arr = mad(hist2d, min_dev=min_dev).astype(np.float32)
+    arr = arr[xrt: T - xl, yr: H - yl]
+    intermediate['after_mad'] = arr.T.copy()
     
     t_cut      = t_left_edges[xrt: T - xl]
     ranges_km  = ranges_full[yr: H - yl]

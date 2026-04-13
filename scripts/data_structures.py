@@ -1,16 +1,3 @@
-"""
-Data structures for the radar processing pipeline.
-
-Design Philosophy
------------------
-Each dataclass contains:
-1. Primary outputs needed by the next stage
-2. Intermediate data for plotting (stored in separate dict)
-3. Metadata tracking parameters and statistics
-
-Data flows cleanly: PreprocessOutput -> EdgeDetectionOutput -> FitOutput
-"""
-
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
