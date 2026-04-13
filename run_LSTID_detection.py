@@ -36,6 +36,77 @@ from scripts.plot_lstid_paper import *
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
 
+
+def daily_summary(fit_result, df, date):
+    """
+    Build rows for the daily sinfit CSV summary.
+
+    Returns one row per sinfit attempt (all_sin_fits), sorted by R² descending.
+    If no stable window was found, returns a single NaN row for the date.
+
+    Parameters
+    ----------
+    fit_result : FitOutput
+    df         : Polars DataFrame (raw spot data for the day)
+    date       : datetime — the processing date
+
+    Returns
+    -------
+    list[dict]
+    """
+    n_spots    = df.height
+    fitWin_0, fitWin_1 = fit_result.meta.get('fitWinLim', (None, None))
+
+    if fitWin_0 is not None and fitWin_1 is not None:
+        fitStart    = pd.Timestamp(fitWin_0).strftime('%Y-%m-%d %H:%M')
+        fitEnd      = pd.Timestamp(fitWin_1).strftime('%Y-%m-%d %H:%M')
+        duration_hr = (pd.Timestamp(fitWin_1) - pd.Timestamp(fitWin_0)).total_seconds() / 3600
+    else:
+        fitStart = fitEnd = duration_hr = np.nan
+
+    all_sin_fits = fit_result.all_sin_fits
+
+    if not all_sin_fits:
+        return [{
+            'date':             date.strftime('%Y-%m-%d'),
+            'selected':         np.nan,
+            'T_hr':             np.nan,
+            'T_hr_guess':       np.nan,
+            'amplitude_km':     np.nan,
+            'phase_hr':         np.nan,
+            'offset_km':        np.nan,
+            'slope_kmph':       np.nan,
+            'r2':               np.nan,
+            'fitStart':         fitStart,
+            'fitEnd':           fitEnd,
+            'duration_hr':      duration_hr,
+            'min_combined_fit': np.nan,
+            'n_spots':          n_spots,
+        }]
+
+    has_combined = (len(fit_result.sin_fit) > 0 and len(fit_result.poly_fit) > 0)
+    min_combined = float(np.min(fit_result.sin_fit + fit_result.poly_fit)) if has_combined else np.nan
+
+    rows = []
+    for i, fit in enumerate(all_sin_fits):
+        rows.append({
+            'date':             date.strftime('%Y-%m-%d'),
+            'selected':         (i == 0),
+            'T_hr':             fit.get('T_hr'),
+            'T_hr_guess':       fit.get('T_hr_guess'),
+            'amplitude_km':     fit.get('amplitude_km'),
+            'phase_hr':         fit.get('phase_hr'),
+            'offset_km':        fit.get('offset_km'),
+            'slope_kmph':       fit.get('slope_kmph'),
+            'r2':               fit.get('r2'),
+            'fitStart':         fitStart,
+            'fitEnd':           fitEnd,
+            'duration_hr':      duration_hr,
+            'min_combined_fit': min_combined if i == 0 else np.nan,
+            'n_spots':          n_spots,
+        })
+    return rows
+
 if __name__ == "__main__":
 
     cfg, _ = load_config()
@@ -106,6 +177,21 @@ if __name__ == "__main__":
         output_dir=plot_cfg["output_dir"],
     )
 
+    # --- CSV summary path (constructed once from overall date range + filter params) ---
+    _dr         = cfg["distance_range"]
+    _min_dist   = _dr["min_dist"]
+    _max_dist   = _dr["max_dist"]
+    _sDate_str  = cfg["sDate"].strftime('%Y%m%d')
+    _eDate_str  = cfg["eDate"].strftime('%Y%m%d')
+    _region_str = cfg["region_name"].replace(' ', '_')
+    _csv_dir    = os.path.join("output", "summary_csv")
+    os.makedirs(_csv_dir, exist_ok=True)
+    csv_path = os.path.join(
+        _csv_dir,
+        f"{_sDate_str}-{_eDate_str}_{_region_str}_{cfg['freq']}MHz"
+        f"_{_min_dist}-{_max_dist}km_sinfit.csv"
+    )
+
     for s_dt, e_dt, date_str in split_datetime_range_by_day(cfg["sDate"], cfg["eDate"]):
 
         ### Supress NaN column warning (expected behavior)
@@ -131,12 +217,17 @@ if __name__ == "__main__":
         log.info("Stage 3/3: Sinusoidal Fitting Complete")
     
         if fit_result.sin_params:
-            log.info(f"  → R² = {fit_result.sin_params.get('r2', 0):.4f}")
-            log.info(f"  → Period = {fit_result.sin_params.get('T_hr', 0):.2f} hours")
-            log.info(f"  → Amplitude = {fit_result.sin_params.get('amplitude_km', 0):.2f} km")
+            log.info("  → Fit passed")
         else:
             log.warning("  → Fit failed - no stable region found")
-        
+
+        # --- CSV summary ---
+        log.info("Saving CSV summary...")
+        rows = daily_summary(fit_result, df, s_dt)
+        summary_df = pd.DataFrame(rows)
+        summary_df.to_csv(csv_path, mode='a', header=not os.path.exists(csv_path), index=False)
+        log.info(f"CSV summary saved: {csv_path} ({len(rows)} row(s))")
+
         log.info("Creating stack plots...")
         stack_plot_preprocess(fit_result, df, **plot_params)
         stack_plot_sinfit_v1(fit_result, **plot_params)

@@ -1,6 +1,6 @@
 import numpy as np
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 from operator import itemgetter
 from scipy.signal import butter, filtfilt
 from numpy.polynomial import polynomial as poly
@@ -12,77 +12,75 @@ from scripts.data_structures import EdgeDetectionOutput, FitOutput
 def sinusoid(tt_sec, T_hr, amplitude_km, phase_hr, offset_km, slope_kmph):
     """
     Sinusoid function for curve fitting.
-    
+
     Parameters
     ----------
     tt_sec : np.ndarray
-        Time in seconds since midnight
+        Time in seconds since midnight.
     T_hr : float
-        Period in hours
+        Period in hours.
     amplitude_km : float
-        Amplitude in km
+        Amplitude in km.
     phase_hr : float
-        Phase in hours
+        Phase in hours.
     offset_km : float
-        Vertical offset in km
+        Vertical offset in km.
     slope_kmph : float
-        Linear drift in km/hour
-        
+        Linear drift in km/hour.
+
     Returns
     -------
     np.ndarray
-        Sinusoid values
+        Sinusoid values.
     """
     phase_rad = (2. * np.pi) * (phase_hr / T_hr)
     freq = 1. / (timedelta(hours=T_hr).total_seconds())
-    result = (np.abs(amplitude_km) * np.sin((2 * np.pi * tt_sec * freq) + phase_rad) +
-              (slope_kmph / 3600.) * tt_sec + offset_km)
-    return result
+    return (np.abs(amplitude_km) * np.sin((2 * np.pi * tt_sec * freq) + phase_rad) +
+            (slope_kmph / 3600.) * tt_sec + offset_km)
 
 
 def bandpass_filter(data, lowcut, highcut, fs, order=4):
     """
     Apply Butterworth bandpass filter.
-    
+
     Parameters
     ----------
     data : np.ndarray
-        Input signal
+        Input signal.
     lowcut : float
-        Low cutoff frequency (Hz)
+        Low cutoff frequency (Hz).
     highcut : float
-        High cutoff frequency (Hz)
+        High cutoff frequency (Hz).
     fs : float
-        Sampling frequency (Hz)
+        Sampling frequency (Hz).
     order : int
-        Filter order
-        
+        Filter order.
+
     Returns
     -------
     np.ndarray
-        Filtered signal
+        Filtered signal.
     """
     nyquist = 0.5 * fs
     low = lowcut / nyquist
     high = highcut / nyquist
     b, a = butter(order, [low, high], btype='band')
-    filtered = filtfilt(b, a, data)
-    return filtered
+    return filtfilt(b, a, data)
 
 
 def islandinfo(y, trigger_val, stopind_inclusive=True):
     """
     Find continuous regions (islands) where y == trigger_val.
-    
+
     Parameters
     ----------
     y : np.ndarray
-        Boolean or comparison array
+        Boolean or comparison array.
     trigger_val : bool
-        Value to match
+        Value to match.
     stopind_inclusive : bool
-        Include stop index in island
-        
+        Include stop index in island.
+
     Returns
     -------
     tuple
@@ -94,6 +92,197 @@ def islandinfo(y, trigger_val, stopind_inclusive=True):
     return list(zip(idx[:-1:2], idx[1::2] - int(stopind_inclusive))), lens
 
 
+def compute_stability(edge_positions: np.ndarray, roll_win: int) -> np.ndarray:
+    """
+    Compute rolling coefficient of variation (std/mean) as a stability metric.
+
+    Parameters
+    ----------
+    edge_positions : np.ndarray
+        Detected edge positions in km.
+    roll_win : int
+        Rolling window size in samples.
+
+    Returns
+    -------
+    np.ndarray
+        Stability array (NaN for first roll_win-1 points).
+    """
+    n = len(edge_positions)
+    stability = np.full(n, np.nan)
+    for i in range(roll_win - 1, n):
+        window = edge_positions[i - roll_win + 1:i + 1]
+        mean_val = np.mean(window)
+        std_val = np.std(window)
+        stability[i] = std_val / mean_val if mean_val != 0 else np.inf
+    return stability
+
+
+def find_fit_window(
+    stability: np.ndarray,
+    edge_times: np.ndarray,
+    winlim: tuple,
+    stab_thresh: float,
+    margin_minutes: int,
+) -> Optional[Tuple[np.ndarray, np.datetime64, np.datetime64]]:
+    """
+    Find the longest stable region within the analysis window, with safety margins.
+
+    Parameters
+    ----------
+    stability : np.ndarray
+        Rolling CV stability metric.
+    edge_times : np.ndarray
+        Uniform time grid (datetime64[ns]).
+    winlim : tuple
+        (win_0, win_1) analysis window limits.
+    stab_thresh : float
+        Maximum CV for a point to be considered stable.
+    margin_minutes : int
+        Safety margin applied inward from window edges.
+
+    Returns
+    -------
+    (fit_mask, fitWin_0, fitWin_1) or None if no valid window found.
+    """
+    win_0, win_1 = winlim
+    window_mask = (edge_times >= win_0) & (edge_times < win_1)
+    stable_mask = (stability < stab_thresh) & window_mask
+
+    islands, island_lengths = islandinfo(stable_mask, True)
+    if len(islands) == 0:
+        return None
+
+    isl_idx = np.argmax(island_lengths)
+    sInx, eInx = islands[isl_idx]
+
+    margin = np.timedelta64(margin_minutes, 'm')
+    fitWin_0 = max(edge_times[sInx], win_0 + margin)
+    fitWin_1 = min(edge_times[eInx], win_1 - margin)
+
+    if fitWin_0 >= fitWin_1:
+        return None
+
+    fit_mask = (edge_times >= fitWin_0) & (edge_times < fitWin_1)
+    if np.sum(fit_mask) == 0:
+        return None
+
+    return fit_mask, fitWin_0, fitWin_1
+
+
+def fit_polynomial(
+    tt_sec: np.ndarray,
+    fit_data: np.ndarray,
+) -> Tuple[np.ndarray, Dict[str, float], np.ndarray]:
+    """
+    Fit a 2nd-degree polynomial and detrend the data.
+
+    Parameters
+    ----------
+    tt_sec : np.ndarray
+        Time in seconds since midnight.
+    fit_data : np.ndarray
+        Edge positions in km within fit window.
+
+    Returns
+    -------
+    poly_fit_vals : np.ndarray
+        Polynomial fit evaluated at tt_sec.
+    poly_params : dict
+        Polynomial coefficients (c_0, c_1, c_2) and R².
+    data_detrend : np.ndarray
+        fit_data minus the polynomial trend.
+    """
+    coefs, [ss_res, *_] = poly.polyfit(tt_sec, fit_data, 2, full=True)
+    poly_fit_vals = poly.polyval(tt_sec, coefs)
+
+    ss_tot = np.sum((fit_data - np.mean(fit_data)) ** 2)
+    poly_params = {f'c_{i}': coef for i, coef in enumerate(coefs)}
+    poly_params['r2'] = 1 - (ss_res[0] / ss_tot)
+
+    data_detrend = fit_data - poly_fit_vals
+    return poly_fit_vals, poly_params, data_detrend
+
+
+def apply_bandpass(
+    data_detrend: np.ndarray,
+    lstid_T_hr_lim: tuple,
+    fs: float,
+) -> np.ndarray:
+    """
+    Apply a bandpass filter to detrended edge data.
+
+    Parameters
+    ----------
+    data_detrend : np.ndarray
+        Detrended edge positions in km.
+    lstid_T_hr_lim : tuple
+        (min_T_hr, max_T_hr) period limits for bandpass.
+    fs : float
+        Sampling frequency in Hz.
+
+    Returns
+    -------
+    np.ndarray
+        Bandpass-filtered detrended data.
+    """
+    lowcut  = 1 / (lstid_T_hr_lim[1] * 3600)
+    highcut = 1 / (lstid_T_hr_lim[0] * 3600)
+    return bandpass_filter(data_detrend, lowcut, highcut, fs, order=4)
+
+
+def fit_sinusoids(
+    tt_sec: np.ndarray,
+    data_detrend: np.ndarray,
+    T_hr_guesses: np.ndarray,
+) -> List[Dict[str, float]]:
+    """
+    Try sinusoidal fits across multiple period guesses, return all sorted by R².
+
+    Parameters
+    ----------
+    tt_sec : np.ndarray
+        Time in seconds since midnight.
+    data_detrend : np.ndarray
+        Detrended (and optionally bandpass-filtered) edge in km.
+    T_hr_guesses : np.ndarray
+        Period guesses in hours to try.
+
+    Returns
+    -------
+    List of fit parameter dicts sorted by R² descending.
+    Empty list if all fits fail.
+    """
+    all_fits = []
+    for T_hr_guess in T_hr_guesses:
+        p0 = [
+            T_hr_guess,
+            np.ptp(data_detrend) / 2.,
+            0.,
+            np.mean(data_detrend),
+            0.,
+        ]
+        try:
+            sin_params, *_ = curve_fit(sinusoid, tt_sec, data_detrend, p0=p0, full_output=True)
+            fit_result = {
+                'T_hr':         sin_params[0],
+                'amplitude_km': np.abs(sin_params[1]),
+                'phase_hr':     sin_params[2],
+                'offset_km':    sin_params[3],
+                'slope_kmph':   sin_params[4],
+            }
+            sin_vals = sinusoid(tt_sec, **fit_result)
+            ss_res = np.sum((data_detrend - sin_vals) ** 2)
+            ss_tot = np.sum((data_detrend - np.mean(data_detrend)) ** 2)
+            fit_result['r2'] = 1 - (ss_res / ss_tot)
+            fit_result['T_hr_guess'] = T_hr_guess
+            all_fits.append(fit_result)
+        except Exception:
+            continue
+
+    return sorted(all_fits, key=itemgetter('r2'), reverse=True)
+
+
 def sin_fit(
     edge_data: EdgeDetectionOutput,
     *,
@@ -103,323 +292,107 @@ def sin_fit(
     stab_thresh: float,
     margin_minutes: int,
     T_hr_guesses: np.ndarray = None,
-    **_: Any
+    **_: Any,
 ) -> FitOutput:
     """
     Fit sinusoid to detected edge with stability-based windowing.
-    
+
     Pipeline
     --------
-    1. Compute stability (coefficient of variation in rolling window)
-    2. Find longest stable region meeting threshold
-    3. Apply margins to avoid edge effects
-    4. Fit 2nd degree polynomial for detrending
-    5. Optionally apply bandpass filter
-    6. Try multiple sinusoidal periods, select best R²
-    
-    Parameters
-    ----------
-    edge_data : EdgeDetectionOutput
-        Output from detect_edge
-    bandpass : bool
-        Apply bandpass filter after detrending
-    lstid_T_hr_lim : tuple
-        (min_period_hr, max_period_hr) for bandpass cutoffs
-    roll_win : int
-        Rolling window size for stability calculation (minutes)
-    stab_thresh : float
-        Stability threshold (coefficient of variation)
-    margin_minutes : int
-        Safety margin from window edges for fitting
-    T_hr_guesses : np.ndarray, optional
-        Period guesses for sin fitting (default: np.arange(1, 4.5, 0.5))
-        
-    Returns
-    -------
-    FitOutput
-        Fitted sinusoid, polynomial, detrended data, and all parameters
+    1. compute_stability  — rolling CV metric
+    2. find_fit_window    — longest stable region + safety margins
+    3. fit_polynomial     — 2nd-degree detrend
+    4. apply_bandpass     — optional 1–4.5 hr bandpass
+    5. fit_sinusoids      — multi-guess curve fit, best R² selected
     """
     if T_hr_guesses is None:
         T_hr_guesses = np.arange(1, 4.5, 0.5)
-    
-    # Unpack edge data
-    edge_times = edge_data.edge_times
+
+    edge_times     = edge_data.edge_times
     edge_positions = edge_data.edge_positions
-    date = edge_data.meta['date']
-    winlim = edge_data.meta['time_limits']['winlim']
-    
-    # Initialize intermediate dict with all previous data
-    intermediate = {**edge_data.intermediate}
-    
-    # --- 1) Compute stability (coefficient of variation) ---
-    # Rolling std / rolling mean
-    # Convert to simple indexing (edge_times is uniform grid)
-    n = len(edge_positions)
-    stability = np.full(n, np.nan)
-    
-    for i in range(roll_win - 1, n):
-        window = edge_positions[i - roll_win + 1:i + 1]
-        mean_val = np.mean(window)
-        std_val = np.std(window)
-        if mean_val != 0:
-            stability[i] = std_val / mean_val
-        else:
-            stability[i] = np.inf
-    
-    # DEBUG: Print stability info
-    print(f"\n=== STABILITY DEBUG ===")
-    print(f"Total edge points: {len(edge_positions)}")
-    print(f"Edge position range: {np.nanmin(edge_positions):.1f} to {np.nanmax(edge_positions):.1f} km")
-    print(f"Stability range: {np.nanmin(stability):.4f} to {np.nanmax(stability):.4f}")
-    print(f"Stability threshold: {stab_thresh}")
-    print(f"Points below threshold: {np.sum(stability < stab_thresh)}")
-    print(f"Window limits: {winlim}")
-    
-    # --- 2) Find stable regions ---
-    # Only consider data within analysis window
-    win_0, win_1 = winlim
-    window_mask = (edge_times >= win_0) & (edge_times < win_1)
-    print(f"Points in analysis window (13:00-23:00): {np.sum(window_mask)}")
-    
-    # Stability criteria: must be < threshold AND in analysis window
-    stable_mask = (stability < stab_thresh) & window_mask
-    print(f"Stable points in window: {np.sum(stable_mask)}")
-    
-    if np.sum(stable_mask) > 0:
-        print(f"First stable index: {np.where(stable_mask)[0][0]}")
-        print(f"Last stable index: {np.where(stable_mask)[0][-1]}")
-    print(f"======================\n")
-    
-    # Find islands of stability
-    islands, island_lengths = islandinfo(stable_mask, True)
-    print(f"Number of islands found: {len(islands)}")
-    if len(islands) > 0:
-        print(f"Island lengths: {island_lengths}")
-        print(f"Longest island: {max(island_lengths)} points")
-    if len(islands) == 0:
-        # No stable region found - return empty fit
-        return _empty_fit_result(edge_data, edge_times, stability)
-    
-    # Get longest stable island
-    isl_idx = np.argmax(island_lengths)
-    island = islands[isl_idx]
-    sInx, eInx = island
-    
-    fitWin_0 = edge_times[sInx]
-    fitWin_1 = edge_times[eInx]
+    date           = edge_data.meta['date']
+    winlim         = edge_data.meta['time_limits']['winlim']
+    intermediate   = {**edge_data.intermediate}
 
-    print(f"Selected island: indices {sInx} to {eInx}")
-    print(f"Initial fit window: {fitWin_0} to {fitWin_1}")
-    
-    # --- 3) Apply safety margins ---
-    margin = np.timedelta64(margin_minutes, 'm')
-    if fitWin_0 < (win_0 + margin):
-        fitWin_0 = win_0 + margin
-    if fitWin_1 > (win_1 - margin):
-        fitWin_1 = win_1 - margin
+    # --- 1) Stability ---
+    stability = compute_stability(edge_positions, roll_win)
 
-    print(f"After margins: {fitWin_0} to {fitWin_1}")
-
-    # Check if window is still valid after margins
-    if fitWin_0 >= fitWin_1:
-        print(f"ERROR: Fit window invalid after margins! {fitWin_0} >= {fitWin_1}")
+    # --- 2) Find fit window ---
+    window_result = find_fit_window(stability, edge_times, winlim, stab_thresh, margin_minutes)
+    if window_result is None:
         return _empty_fit_result(edge_data, edge_times, stability)
 
-    # Select data in fit window
-    fit_mask = (edge_times >= fitWin_0) & (edge_times < fitWin_1)
-    print(f"Points in fit window: {np.sum(fit_mask)}")
-
-    if np.sum(fit_mask) == 0:
-        print(f"ERROR: No points in fit window!")
-        return _empty_fit_result(edge_data, edge_times, stability)
-
+    fit_mask, fitWin_0, fitWin_1 = window_result
     fit_times = edge_times[fit_mask]
-    fit_data = edge_positions[fit_mask]
-    
-    print(f"fit_times length: {len(fit_times)}")
-    print(f"fit_data length: {len(fit_data)}")
-    print(f"fit_data range: {fit_data.min():.1f} to {fit_data.max():.1f} km")
-    
-    # Convert to seconds since midnight
-    t0 = datetime(date.year, date.month, date.day)
-    tt_sec = np.array([(t - np.datetime64(t0, 'ns')).astype('timedelta64[s]').astype(float)
-                       for t in fit_times])
-    
-    print(f"tt_sec length: {len(tt_sec)}")
-    print(f"tt_sec range: {tt_sec.min():.0f} to {tt_sec.max():.0f} seconds")
-    print(f"Starting polynomial fitting...")
-    
-    # --- 4) Polynomial detrending ---
-    try:
-        coefs, [ss_res, rank, singular_values, rcond] = poly.polyfit(
-            tt_sec, fit_data, 2, full=True
-        )
-        print(f"Polynomial fit successful!")
-        print(f"  Coefficients: {coefs}")
-        print(f"  R² = {1 - (ss_res[0] / np.sum((fit_data - np.mean(fit_data))**2)):.4f}")
-        
-        ss_res_poly = ss_res[0]
-        poly_fit_vals = poly.polyval(tt_sec, coefs)
-        
-        poly_params = {f'c_{i}': coef for i, coef in enumerate(coefs)}
-        ss_tot_poly = np.sum((fit_data - np.mean(fit_data))**2)
-        r_sqrd_poly = 1 - (ss_res_poly / ss_tot_poly)
-        poly_params['r2'] = r_sqrd_poly
-        
-        # Detrend
-        data_detrend = fit_data - poly_fit_vals
-        print(f"Data detrended, range: {data_detrend.min():.1f} to {data_detrend.max():.1f} km")
-        
-        # Save pre-bandpass version
-        data_detrend_no_bp = data_detrend.copy()
-        
-        # --- 5) Optional bandpass filter ---
-        if bandpass:
-            print(f"Applying bandpass filter...")
-            lowcut = 1 / (lstid_T_hr_lim[1] * 3600)
-            highcut = 1 / (lstid_T_hr_lim[0] * 3600)
-            fs = 1 / 60  # 1 sample per minute
-            order = 4
-            
-            print(f"  lowcut={lowcut:.6f} Hz, highcut={highcut:.6f} Hz, fs={fs:.4f} Hz")
-            
-            data_detrend = bandpass_filter(
-                data_detrend, lowcut, highcut, fs, order
-            )
-            print(f"Bandpass applied, range: {data_detrend.min():.1f} to {data_detrend.max():.1f} km")
-        else:
-            # If no bandpass, they're the same
-            data_detrend_no_bp = data_detrend
-        
-        # --- 6) Sinusoidal fitting with multiple period guesses ---
-        print(f"Trying {len(T_hr_guesses)} period guesses: {T_hr_guesses}")
-        all_sin_fits = []
-        for T_hr_guess in T_hr_guesses:
-            guess = {
-                'T_hr': T_hr_guess,
-                'amplitude_km': np.ptp(data_detrend) / 2.,
-                'phase_hr': 0.,
-                'offset_km': np.mean(data_detrend),
-                'slope_kmph': 0.,
-            }
-            
-            try:
-                sin_params, pcov, infodict, mesg, ier = curve_fit(
-                    sinusoid, tt_sec, data_detrend,
-                    p0=list(guess.values()),
-                    full_output=True
-                )
-                
-                # Extract parameters
-                fit_result = {
-                    'T_hr': sin_params[0],
-                    'amplitude_km': np.abs(sin_params[1]),
-                    'phase_hr': sin_params[2],
-                    'offset_km': sin_params[3],
-                    'slope_kmph': sin_params[4],
-                }
-                
-                # Compute fit and R²
-                sin_fit_vals = sinusoid(tt_sec, **fit_result)
-                ss_res_sin = np.sum((data_detrend - sin_fit_vals)**2)
-                ss_tot_sin = np.sum((data_detrend - np.mean(data_detrend))**2)
-                r_sqrd_sin = 1 - (ss_res_sin / ss_tot_sin)
-                
-                fit_result['r2'] = r_sqrd_sin
-                fit_result['T_hr_guess'] = T_hr_guess
-                all_sin_fits.append(fit_result)
-                print(f"  T={T_hr_guess:.1f}h: R²={r_sqrd_sin:.4f}, Amp={fit_result['amplitude_km']:.1f}km")
-                
-            except Exception as e:
-                print(f"  T={T_hr_guess:.1f}h: FAILED ({e})")
-                continue
-        
-        # Sort by R² and select best
-        if len(all_sin_fits) > 0:
-            print(f"Successfully fit {len(all_sin_fits)} sinusoids!")
-            all_sin_fits = sorted(all_sin_fits, key=itemgetter('r2'), reverse=True)
-            sin_params = all_sin_fits[0].copy()
-            print(f"Best fit: T={sin_params['T_hr']:.2f}h, R²={sin_params['r2']:.4f}")
-            sin_fit_vals = sinusoid(
-                tt_sec,
-                T_hr=sin_params['T_hr'],
-                amplitude_km=sin_params['amplitude_km'],
-                phase_hr=sin_params['phase_hr'],
-                offset_km=sin_params['offset_km'],
-                slope_kmph=sin_params['slope_kmph']
-            )
-        else:
-            print(f"WARNING: No successful sinusoid fits!")
-            # No successful fits
-            sin_params = {}
-            sin_fit_vals = np.full(len(tt_sec), np.nan)
-            poly_fit_vals = np.full(len(tt_sec), np.nan)
-            data_detrend = np.full(len(tt_sec), np.nan)
-            
-    except Exception as e:
-        # Fitting failed entirely
-        print(f"!!! EXCEPTION IN FITTING: {e}")
-        import traceback
-        traceback.print_exc()
-        all_sin_fits = []
-        sin_params = {}
-        poly_params = {}
-        sin_fit_vals = np.full(len(tt_sec), np.nan)
-        poly_fit_vals = np.full(len(tt_sec), np.nan)
-        data_detrend = np.full(len(tt_sec), np.nan)
-    
-    print(f"Building final output...")
-    print(f"  sin_params: {sin_params}")
-    print(f"  Number of fits tried: {len(all_sin_fits) if 'all_sin_fits' in locals() else 0}")
-    
-    # Store pre-bandpass detrended data in intermediate
-    if 'data_detrend_no_bp' in locals():
-        intermediate['data_detrend_no_bp'] = data_detrend_no_bp
+    fit_data  = edge_positions[fit_mask]
+
+    t0     = datetime(date.year, date.month, date.day)
+    tt_sec = np.array([
+        (t - np.datetime64(t0, 'ns')).astype('timedelta64[s]').astype(float)
+        for t in fit_times
+    ])
+
+    # --- 3) Polynomial detrend ---
+    poly_fit_vals, poly_params, data_detrend = fit_polynomial(tt_sec, fit_data)
+
+    # --- 4) Optional bandpass ---
+    data_detrend_no_bp = data_detrend.copy()
+    if bandpass:
+        fs = 1 / 60  # 1 sample per minute
+        data_detrend = apply_bandpass(data_detrend, lstid_T_hr_lim, fs)
+
+    intermediate['data_detrend_no_bp'] = data_detrend_no_bp
+
+    # --- 5) Sinusoidal fitting ---
+    all_sin_fits = fit_sinusoids(tt_sec, data_detrend, T_hr_guesses)
+
+    if all_sin_fits:
+        sin_params   = all_sin_fits[0].copy()
+        sin_fit_vals = sinusoid(tt_sec, **{k: sin_params[k] for k in
+                                ['T_hr', 'amplitude_km', 'phase_hr', 'offset_km', 'slope_kmph']})
     else:
-        intermediate['data_detrend_no_bp'] = np.array([])
-    
-    # --- 7) Build metadata ---
+        sin_params   = {}
+        sin_fit_vals = np.full(len(tt_sec), np.nan)
+
     meta = {
         **edge_data.meta,
         'fit_params': {
-            'bandpass': bandpass,
+            'bandpass':       bandpass,
             'lstid_T_hr_lim': lstid_T_hr_lim,
-            'roll_win': roll_win,
-            'stab_thresh': stab_thresh,
+            'roll_win':       roll_win,
+            'stab_thresh':    stab_thresh,
             'margin_minutes': margin_minutes,
         },
         'fitWinLim': (fitWin_0, fitWin_1),
     }
-    
-    print(f"Returning FitOutput...\n")
-    
+
     return FitOutput(
-        fit_times=fit_times,
-        sin_fit=sin_fit_vals,
-        poly_fit=poly_fit_vals,
-        data_detrend=data_detrend,
-        stability=stability,
-        sin_params=sin_params,
-        poly_params=poly_params,
-        all_sin_fits=all_sin_fits,
-        edge_data=edge_data,
-        intermediate=intermediate,
-        meta=meta,
+        fit_times    = fit_times,
+        sin_fit      = sin_fit_vals,
+        poly_fit     = poly_fit_vals,
+        data_detrend = data_detrend,
+        stability    = stability,
+        sin_params   = sin_params,
+        poly_params  = poly_params,
+        all_sin_fits = all_sin_fits,
+        edge_data    = edge_data,
+        intermediate = intermediate,
+        meta         = meta,
     )
 
 
 def _empty_fit_result(edge_data, edge_times, stability):
-    """Helper to return empty fit when no stable region found."""
+    """Return empty FitOutput when no stable region is found."""
     return FitOutput(
-        fit_times=np.array([], dtype='datetime64[ns]'),
-        sin_fit=np.array([]),
-        poly_fit=np.array([]),
-        data_detrend=np.array([]),
-        stability=stability,
-        sin_params={},
-        poly_params={},
-        all_sin_fits=[],
-        edge_data=edge_data,
-        intermediate={**edge_data.intermediate},
-        meta={**edge_data.meta, 'fit_params': {}, 'fitWinLim': (None, None)},
+        fit_times    = np.array([], dtype='datetime64[ns]'),
+        sin_fit      = np.array([]),
+        poly_fit     = np.array([]),
+        data_detrend = np.array([]),
+        stability    = stability,
+        sin_params   = {},
+        poly_params  = {},
+        all_sin_fits = [],
+        edge_data    = edge_data,
+        intermediate = {**edge_data.intermediate, 'data_detrend_no_bp': np.array([])},
+        meta         = {**edge_data.meta, 'fit_params': {}, 'fitWinLim': (None, None)},
     )

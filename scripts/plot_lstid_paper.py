@@ -143,44 +143,45 @@ def stack_plot_sinfit_v1(
     )
     
     setup_mpl_style()
-    
+
     date = fit_result.meta['date']
-    
+    labels = list(letters[:7])  # ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+
     # Create figure with GridSpec for colorbar column
     fig = plt.figure(figsize=(20, 35))
     gs = gridspec.GridSpec(7, 2, width_ratios=[20, 0.5], height_ratios=[1]*7)
-    
+
     # Panel (a) — Coefficient of Variance Selection
     ax = fig.add_subplot(gs[0, 0])
     ax_cb = fig.add_subplot(gs[0, 1])
-    plot_heatmap_with_variance(ax, ax_cb, fit_result)
-    
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0])
+
     # Panel (b) — Polynomial Fit
     ax = fig.add_subplot(gs[1, 0])
     ax_cb = fig.add_subplot(gs[1, 1])
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result)
-    
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1])
+
     # Panel (c) — Detrended edge
     ax = fig.add_subplot(gs[2, 0])
-    plot_detrended_before_bandpass(ax, fit_result)
-    
+    plot_detrended_before_bandpass(ax, fit_result, label=labels[2])
+
     # Panel (d) — Bandpass-filtered edge
     ax = fig.add_subplot(gs[3, 0])
-    plot_bandpass_filtered(ax, fit_result)
-    
+    plot_bandpass_filtered(ax, fit_result, label=labels[3])
+
     # Panel (e) — Multiple sin fits
     ax = fig.add_subplot(gs[4, 0])
     ax_leg = fig.add_subplot(gs[4, 1])
-    plot_multiple_sin_fits(ax, ax_leg, fit_result)
-    
+    plot_multiple_sin_fits(ax, ax_leg, fit_result, label=labels[4])
+
     # Panel (f) — Sin fit parameters table
     ax = fig.add_subplot(gs[5, 0])
-    plot_sin_fit_table(ax, fit_result)
-    
+    plot_sin_fit_table(ax, fit_result, label=labels[5])
+
     # Panel (g) — Final fit overlay
     ax = fig.add_subplot(gs[6, 0])
     ax_cb = fig.add_subplot(gs[6, 1])
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result)
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[6])
 
     fig.suptitle(
         f'Sinusoid Fitting \n{date.strftime("%Y-%m-%d")}',
@@ -249,36 +250,37 @@ def stack_plot_sinfit_v2(
     )
     
     setup_mpl_style()
-    
+
     date = fit_result.meta['date']
-    
+    labels = list(letters[:5])  # ['a', 'b', 'c', 'd', 'e']
+
     # Create figure with GridSpec for colorbar column
     fig = plt.figure(figsize=(20, 25))
     gs = gridspec.GridSpec(5, 2, width_ratios=[20, 0.5], height_ratios=[1]*5)
-    
+
     # Panel (a) — Coefficient of Variance Selection
     ax = fig.add_subplot(gs[0, 0])
     ax_cb = fig.add_subplot(gs[0, 1])
-    plot_heatmap_with_variance(ax, ax_cb, fit_result)
-    
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0])
+
     # Panel (b) — Polynomial Fit
     ax = fig.add_subplot(gs[1, 0])
     ax_cb = fig.add_subplot(gs[1, 1])
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result)
-    
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1])
+
     # Panel (c) — Detrended edge
     ax = fig.add_subplot(gs[2, 0])
-    plot_detrended_before_bandpass(ax, fit_result)
-    
+    plot_detrended_before_bandpass(ax, fit_result, label=labels[2])
+
     # Panel (d) — Multiple sin fits
     ax = fig.add_subplot(gs[3, 0])
     ax_leg = fig.add_subplot(gs[3, 1])
-    plot_multiple_sin_fits(ax, ax_leg, fit_result)
-    
+    plot_multiple_sin_fits(ax, ax_leg, fit_result, label=labels[3])
+
     # Panel (e) — Final fit overlay
     ax = fig.add_subplot(gs[4, 0])
     ax_cb = fig.add_subplot(gs[4, 1])
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result)
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[4])
 
     fig.suptitle(
         f'Sinusoid Fitting \n{date.strftime("%Y-%m-%d")}',
@@ -348,35 +350,36 @@ def stack_plot_sinfit_v3(
     )
     
     setup_mpl_style()
-    
+
     date = fit_result.meta['date']
-    
+    labels = list(letters[:5])  # ['a', 'b', 'c', 'd', 'e']
+
     # Create figure with GridSpec for colorbar column
     fig = plt.figure(figsize=(19, 25))
     gs = gridspec.GridSpec(5, 2, width_ratios=[20, 0.5], height_ratios=[1]*5)
-    
+
     # Panel (a) — Coefficient of Variance Selection
     ax = fig.add_subplot(gs[0, 0])
     ax_cb = fig.add_subplot(gs[0, 1])
-    plot_heatmap_with_variance(ax, ax_cb, fit_result)
-    
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0])
+
     # Panel (b) — Polynomial Fit
     ax = fig.add_subplot(gs[1, 0])
     ax_cb = fig.add_subplot(gs[1, 1])
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result)
-    
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1])
+
     # Panel (c) — Detrended edge
     ax = fig.add_subplot(gs[2, 0])
-    plot_detrended_before_bandpass(ax, fit_result)
-    
-    # Panel (d) — Multiple sin fits
+    plot_detrended_before_bandpass(ax, fit_result, label=labels[2])
+
+    # Panel (d) — Selected sin fit
     ax = fig.add_subplot(gs[3, 0])
-    plot_selected_sin_fit(ax, fit_result)
-    
+    plot_selected_sin_fit(ax, fit_result, label=labels[3])
+
     # Panel (e) — Final fit overlay
     ax = fig.add_subplot(gs[4, 0])
     ax_cb = fig.add_subplot(gs[4, 1])
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result)
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[4])
 
     fig.suptitle(
         f'Sinusoid Fitting \n{date.strftime("%Y-%m-%d")}',

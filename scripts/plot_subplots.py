@@ -27,7 +27,7 @@ def fmt_xaxis(ax, xlim, label=True):
     ax.set_xlim(xlim)
 
 
-def plot_bandpass_filtered(ax, fit_result: FitOutput):
+def plot_bandpass_filtered(ax, fit_result: FitOutput, *, label='d'):
     """
     Panel (d): 1-4.5 HR Bandpass Filtered Edge
     
@@ -51,12 +51,12 @@ def plot_bandpass_filtered(ax, fit_result: FitOutput):
                 ax.axvline(wl, color='lime', ls='--', lw=2)
     
     fmt_xaxis(ax, xlim)
-    ax.set_title("(d) 1 - 4.5 HR Bandpass Filtered Edge", loc='left')
+    ax.set_title(f"({label}) 1 - 4.5 HR Bandpass Filtered Edge", loc='left')
     ax.set_ylabel('Range [km]')
     ax.legend(loc='lower right', fontsize='x-small', ncols=4)
 
 
-def plot_multiple_sin_fits(ax, ax_leg, fit_result: FitOutput):
+def plot_multiple_sin_fits(ax, ax_leg, fit_result: FitOutput, *, label='e'):
     """
     Panel (e): Sinusoidal Fit to Bandpass Filtered Edge (multiple fits)
     
@@ -112,13 +112,13 @@ def plot_multiple_sin_fits(ax, ax_leg, fit_result: FitOutput):
                 ax.axvline(wl, color='lime', ls='--', lw=2)
     
     fmt_xaxis(ax, xlim)
-    ax.set_title("(e) Sinusodial Fit to Bandpass Filtered Edge", loc='left')
+    ax.set_title(f"({label}) Sinusoidal Fit to Bandpass Filtered Edge", loc='left')
     ax.set_ylabel('Range [km]')
     handles, labels = ax.get_legend_handles_labels()
     ax_leg.axis('off')
     ax_leg.legend(handles, labels, loc='center', fontsize=12)
 
-def plot_selected_sin_fit(ax, fit_result: FitOutput):
+def plot_selected_sin_fit(ax, fit_result: FitOutput, *, label='d'):
     """
     Panel (e): Selected sinusoidal fit to bandpass filtered edge
     
@@ -183,12 +183,12 @@ def plot_selected_sin_fit(ax, fit_result: FitOutput):
                 ax.axvline(wl, color='lime', ls='--', lw=2)
 
     fmt_xaxis(ax, xlim)
-    ax.set_title("(e) Selected Sinusoidal Fit to Bandpass Filtered Edge", loc='left')
+    ax.set_title(f"({label}) Selected Sinusoidal Fit to Bandpass Filtered Edge", loc='left')
     ax.set_ylabel('Range [km]')
 
     ax.legend(loc='lower right', fontsize='x-small', ncols=4)
 
-def plot_sin_fit_table(ax, fit_result: FitOutput):
+def plot_sin_fit_table(ax, fit_result: FitOutput, *, label='f'):
     """
     Panel (f): Sin Fit Parameters table
     
@@ -236,14 +236,14 @@ def plot_sin_fit_table(ax, fit_result: FitOutput):
         for row in rows:
             txt_lines.append(fmt_str.format(*row))
         
-        ax.set_title("(f) Sin Fit Parameters", loc='left')
+        ax.set_title(f"({label}) Sin Fit Parameters", loc='left')
         ax.text(0.01, 0.95, '\n'.join(txt_lines), fontdict=fontdict, va='top')
     else:
         ax.text(0.5, 0.5, 'No fits available', ha='center', va='center',
                 transform=ax.transAxes, fontsize=20)
 
 
-def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput):
+def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput, *, label='b'):
     """
     Panel (b): Polynomial Fit - heatmap with polynomial overlay
     
@@ -280,7 +280,7 @@ def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput):
         for wl in fitWinLim:
             ax.axvline(wl, color='lime', ls='--', lw=2)
     
-    ax.set_title("(b) Polynomial Fit", loc='left')
+    ax.set_title(f"({label}) Polynomial Fit", loc='left')
     plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
@@ -288,7 +288,7 @@ def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput):
     ax.set_ylim(900, 1600)
 
 
-def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput):
+def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput, *, label='a'):
     """
     Panel (a): Coefficient of Variance Selection
     
@@ -330,7 +330,7 @@ def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput):
         for wl in fitWinLim:
             ax.axvline(wl, color='lime', ls='--', lw=2)
     
-    ax.set_title("(a) Coefficient of Variance Selection", loc='left')
+    ax.set_title(f"({label}) Coefficient of Variance Selection", loc='left')
     plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
@@ -338,7 +338,7 @@ def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput):
     ax.set_ylim(900, 1600)
 
 
-def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput):
+def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput, *, label='e'):
     """
     Panel (g): Polynomial Detrend + Sin Fit
     
@@ -373,13 +373,13 @@ def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput):
     
     plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
     fmt_xaxis(ax, xlim)
-    ax.set_title("(g) Polynomial Detrend + Sin Fit", loc='left')
+    ax.set_title(f"({label}) Polynomial Detrend + Sin Fit", loc='left')
     ax.set_ylabel('Range [km]')
     ax.set_ylim(900, 1600)
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
 
 
-def plot_detrended_before_bandpass(ax, fit_result: FitOutput):
+def plot_detrended_before_bandpass(ax, fit_result: FitOutput, *, label='c'):
     """
     Panel (c): Edge Detrended using Polynomial Fit (before bandpass)
     
@@ -404,7 +404,7 @@ def plot_detrended_before_bandpass(ax, fit_result: FitOutput):
             for wl in fitWinLim:
                 ax.axvline(wl, color='lime', ls='--', lw=2)
     
-    ax.set_title("(c) Edge Detrended using Polynomial Fit", loc='left')
+    ax.set_title(f"({label}) Edge Detrended using Polynomial Fit", loc='left')
     fmt_xaxis(ax, xlim)
     ax.set_ylabel('Range [km]')
     ax.legend(loc='lower right', fontsize='x-small', ncols=4)
