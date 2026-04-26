@@ -171,3 +171,6 @@ cache/
 
 CLAUDE.md
 SOLID_analysis.md
+
+.virtual_documents/
+Untitled.ipynb

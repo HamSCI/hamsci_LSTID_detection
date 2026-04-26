@@ -2,6 +2,7 @@
 
 import shutil
 import dask.dataframe as dd
+from scripts.base_loader import BaseSpotLoader
 import polars as pl
 import pandas as pd
 import numpy as np
@@ -34,7 +35,7 @@ def split_datetime_range_by_day(start_dt: datetime, end_dt: datetime) -> list[tu
     result.append((current_start, end_dt, date_str))
     return result
 
-class HDF5PolarsLoader:
+class HDF5PolarsLoader(BaseSpotLoader):
     def __init__(self, 
                  *,
                  data_dir: str, 

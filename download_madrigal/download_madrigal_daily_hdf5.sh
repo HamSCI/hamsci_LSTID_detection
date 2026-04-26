@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define the start and end datesc (month - day - year)
-startDate="12/01/2019"
-endDate="01/30/2020"
+startDate="12/24/2019"
+endDate="12/28/2019"
 
 # Convert dates to a format suitable for looping
 currentDate=$(date -d "$startDate" +%Y%m%d)
