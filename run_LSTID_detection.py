@@ -3,6 +3,8 @@
 import os
 import math
 import time
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 from datetime import timedelta
 import argparse, sys, json
@@ -43,33 +45,10 @@ def daily_summary(fit_result, df, date, *,
                   t_preprocess=None, t_edge=None, t_fit=None):
     """
     Build rows for the daily sinfit CSV summary.
-
     Returns one row per sinfit attempt (all_sin_fits), sorted by R² descending.
     If no stable window was found, returns a single NaN row for the date.
-
-    Timing columns (on selected row only):
-      t_load_cold_sec   — load time when reading from HDF5
-      t_load_cached_sec — load time when reading from cache
-      t_preprocess_sec  — preprocess_heatmap wall time
-      t_edge_sec        — detect_edge wall time
-      t_fit_sec         — sin_fit wall time
-
-    Parameters
-    ----------
-    fit_result   : FitOutput
-    df           : Polars DataFrame (raw spot data for the day)
-    date         : datetime — the processing date
-    t_load       : float — load + histogram wall time
-    from_cache   : bool  — whether the dataframe/heatmap came from cache
-    t_preprocess : float — preprocess wall time
-    t_edge       : float — edge detect wall time
-    t_fit        : float — sin_fit wall time
-
-    Returns
-    -------
-    list[dict]
     """
-    n_spots    = df.height
+    n_spots = df.height
     fitWin_0, fitWin_1 = fit_result.meta.get('fitWinLim', (None, None))
 
     if fitWin_0 is not None and fitWin_1 is not None:
@@ -136,6 +115,59 @@ def daily_summary(fit_result, df, date, *,
         })
     return rows
 
+def process_one_day(args):
+    """Self-contained per-day worker: load → preprocess → edge detect → fit → plot."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import warnings
+    warnings.filterwarnings('ignore', category=RuntimeWarning,
+                            message='All-NaN slice encountered')
+    import dask
+    dask.config.set(scheduler='synchronous')
+
+    s_dt        = args['s_dt']
+    e_dt        = args['e_dt']
+    base_params = args['base_params']
+    pre_params  = args['pre_params']
+    edge_params = args['edge_params']
+    fit_params  = args['fit_params']
+    plot_params = args['plot_params']
+
+    loader     = HDF5PolarsLoader(**base_params, sDate=s_dt, eDate=e_dt)
+    from_cache = (loader.use_cache
+                  and loader.cache_path_df.exists()
+                  and loader.cache_path_hist.exists())
+
+    _t0    = time.perf_counter()
+    df     = loader.get_dataframe()
+    hist2d, meta = loader.gen_histogram()
+    t_load = round(time.perf_counter() - _t0, 2)
+
+    _t0          = time.perf_counter()
+    pre_result   = preprocess_heatmap(hist2d, meta, **pre_params)
+    t_preprocess = round(time.perf_counter() - _t0, 2)
+
+    _t0         = time.perf_counter()
+    edge_result = detect_edge(s_dt, pre_result, **edge_params)
+    t_edge      = round(time.perf_counter() - _t0, 2)
+
+    _t0        = time.perf_counter()
+    fit_result = sin_fit(edge_result, **fit_params)
+    t_fit      = round(time.perf_counter() - _t0, 2)
+
+    stack_plot_preprocess(fit_result, df, **plot_params)
+    stack_plot_sinfit_v1(fit_result, **plot_params)
+    stack_plot_sinfit_v2(fit_result, **plot_params)
+    stack_plot_sinfit_v3(fit_result, **plot_params)
+
+    rows = daily_summary(
+        fit_result, df, s_dt,
+        t_load=t_load, from_cache=from_cache,
+        t_preprocess=t_preprocess, t_edge=t_edge, t_fit=t_fit,
+    )
+    return s_dt, rows, from_cache
+
+
 if __name__ == "__main__":
 
     cfg, _ = load_config()
@@ -169,6 +201,7 @@ if __name__ == "__main__":
         freq_range=FREQ[cfg["freq"]],
         distance_range=cfg["distance_range"],
         use_cache=cfg["use_cache"],
+        chunk_size=cfg.get("chunk_size", 500_000),
     )
 
     pre_params = dict(
@@ -221,64 +254,49 @@ if __name__ == "__main__":
         f"_{_min_dist}-{_max_dist}km_sinfit.csv"
     )
 
-    for s_dt, e_dt, date_str in split_datetime_range_by_day(cfg["sDate"], cfg["eDate"]):
+    day_args = []
+    for s_dt, e_dt, _ in split_datetime_range_by_day(cfg["sDate"], cfg["eDate"]):
+        day_args.append(dict(
+            s_dt=s_dt,
+            e_dt=e_dt,
+            base_params=base_params,
+            pre_params=pre_params,
+            edge_params=edge_params,
+            fit_params=fit_params,
+            plot_params=plot_params,
+        ))
 
-        ### Supress NaN column warning (expected behavior)
-        warnings.filterwarnings('ignore', category=RuntimeWarning, 
-                        message='All-NaN slice encountered')
-        cfg, _ = load_config()
-        ###
+    n_workers = min(cfg.get("n_workers", multiprocessing.cpu_count()), len(day_args))
+    log.info(f"Processing {len(day_args)} day(s) with {n_workers} worker(s)...")
 
-        day_params = dict(base_params, sDate=s_dt, eDate=e_dt)
+    completed = {}
+    failed    = []
 
-        loader = HDF5PolarsLoader(**day_params)
-        from_cache = (loader.use_cache
-                      and loader.cache_path_df.exists()
-                      and loader.cache_path_hist.exists())
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        futures = {executor.submit(process_one_day, args): args['s_dt'] for args in day_args}
+        pending = set(futures.keys())
 
-        _t0 = time.perf_counter()
-        df = loader.get_dataframe()
-        hist2d, meta = loader.gen_histogram()
-        t_load = round(time.perf_counter() - _t0, 2)
-        log.info(f"  → Load {'(cache)' if from_cache else '(cold)'}: {t_load}s")
+        while pending:
+            done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+            for future in done:
+                date = futures[future]
+                try:
+                    s_dt, rows, from_cache = future.result()
+                    completed[s_dt] = (rows, from_cache)
+                    log.info(f"Completed: {date.date()}")
+                except Exception as e:
+                    log.error(f"Failed: {date.date()} — {e}", exc_info=True)
+                    failed.append(date)
 
-        log.info("Stage 1/3: Preprocessing heatmap...")
-        _t0 = time.perf_counter()
-        preprocess_result = preprocess_heatmap(hist2d, meta, **pre_params)
-        t_preprocess = round(time.perf_counter() - _t0, 2)
-        log.info(f"Stage 1/3: Preprocessing heatmap Complete ({t_preprocess}s)")
-
-        log.info("Stage 2/3: Edge Detection...")
-        _t0 = time.perf_counter()
-        edge_result = detect_edge(s_dt, preprocess_result, **edge_params)
-        t_edge = round(time.perf_counter() - _t0, 2)
-        log.info(f"Stage 2/3: Edge Detection Complete ({t_edge}s)")
-
-        log.info("Stage 3/3: Sinusoidal Fitting...")
-        _t0 = time.perf_counter()
-        fit_result = sin_fit(edge_result, **fit_params)
-        t_fit = round(time.perf_counter() - _t0, 2)
-        log.info(f"Stage 3/3: Sinusoidal Fitting Complete ({t_fit}s)")
-
-        if fit_result.sin_params:
-            log.info("  → Fit passed")
-        else:
-            log.warning("  → Fit failed - no stable region found")
-
-        # --- CSV summary ---
-        log.info("Saving CSV summary...")
-        rows = daily_summary(
-            fit_result, df, s_dt,
-            t_load=t_load, from_cache=from_cache,
-            t_preprocess=t_preprocess, t_edge=t_edge, t_fit=t_fit,
-        )
+    log.info("Writing CSV summary...")
+    for s_dt in sorted(completed):
+        rows, from_cache = completed[s_dt]
         new_df = pd.DataFrame(rows)
         date_str_csv = s_dt.strftime('%Y-%m-%d')
         if os.path.exists(csv_path):
-            existing = pd.read_csv(csv_path)
-            existing_day = existing[existing['date'] == date_str_csv]
+            existing       = pd.read_csv(csv_path)
+            existing_day   = existing[existing['date'] == date_str_csv]
             existing_other = existing[existing['date'] != date_str_csv]
-            # Preserve whichever load-time column wasn't captured this run
             if not existing_day.empty:
                 prev = existing_day.iloc[0]
                 if from_cache:
@@ -291,15 +309,9 @@ if __name__ == "__main__":
             combined.to_csv(csv_path, index=False)
         else:
             new_df.to_csv(csv_path, index=False)
-        log.info(f"CSV summary saved: {csv_path} ({len(rows)} row(s))")
+    log.info(f"CSV summary saved: {csv_path}")
 
-        log.info("Creating stack plots...")
-        stack_plot_preprocess(fit_result, df, **plot_params)
-        stack_plot_sinfit_v1(fit_result, **plot_params)
-        stack_plot_sinfit_v2(fit_result, **plot_params)
-        stack_plot_sinfit_v3(fit_result, **plot_params)
-        
-        log.info(f"Processing complete for {date_str}\n")
-    
+    if failed:
+        log.warning(f"{len(failed)} day(s) failed: {[d.date() for d in failed]}")
     log.info("Pipeline complete!")
 

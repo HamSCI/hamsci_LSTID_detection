@@ -1,12 +1,13 @@
 {
   "region_name": "Continental US",
   "start": "2019-12-01T00:00:00",
-  "end": "2020-01-30T23:59:59",
+  "end": "2019-12-30T23:59:59",
   "freq": 14,
   "data_dir": "data/madrigal",
   "cache_dir": "cache",
   "distance_range": { "min_dist": 0, "max_dist": 3000 },
   "use_cache": true,
+  "chunk_size": 500000,
 
   "preprocess": {
     "expected_shape": [1440, 300],
