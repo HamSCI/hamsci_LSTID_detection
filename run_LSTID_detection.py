@@ -35,6 +35,7 @@ from scripts.heatmap_preprocess import preprocess_heatmap
 from scripts.edge_detect import detect_edge
 from scripts.sinusoid_fitting import sin_fit
 from scripts.plot_lstid_paper import *
+from scripts.dfs_thesis import thesis_plot_all_panels, thesis_plot_all_panels_no_labels
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
@@ -156,9 +157,13 @@ def process_one_day(args):
     t_fit      = round(time.perf_counter() - _t0, 2)
 
     stack_plot_preprocess(fit_result, df, **plot_params)
+    stack_plot_preprocess_v2(fit_result, df, **plot_params)
     stack_plot_sinfit_v1(fit_result, **plot_params)
     stack_plot_sinfit_v2(fit_result, **plot_params)
     stack_plot_sinfit_v3(fit_result, **plot_params)
+    plot_all_panels_individual(fit_result, df, **plot_params)
+    thesis_plot_all_panels(fit_result, df, **plot_params)
+    thesis_plot_all_panels_no_labels(fit_result, df, **plot_params)
 
     rows = daily_summary(
         fit_result, df, s_dt,

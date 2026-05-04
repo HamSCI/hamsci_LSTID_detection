@@ -235,6 +235,7 @@ def fit_sinusoids(
     tt_sec: np.ndarray,
     data_detrend: np.ndarray,
     T_hr_guesses: np.ndarray,
+    lstid_T_hr_lim: tuple,
 ) -> List[Dict[str, float]]:
     """
     Try sinusoidal fits across multiple period guesses, return all sorted by R².
@@ -247,12 +248,18 @@ def fit_sinusoids(
         Detrended (and optionally bandpass-filtered) edge in km.
     T_hr_guesses : np.ndarray
         Period guesses in hours to try.
+    lstid_T_hr_lim : tuple
+        (min_T_hr, max_T_hr) hard bounds on the fitted period.
 
     Returns
     -------
     List of fit parameter dicts sorted by R² descending.
     Empty list if all fits fail.
     """
+    T_min, T_max = lstid_T_hr_lim
+    lower = [T_min, 0.,      -np.inf, -np.inf, -np.inf]
+    upper = [T_max, np.inf,   np.inf,  np.inf,  np.inf]
+
     all_fits = []
     for T_hr_guess in T_hr_guesses:
         p0 = [
@@ -263,7 +270,10 @@ def fit_sinusoids(
             0.,
         ]
         try:
-            sin_params, *_ = curve_fit(sinusoid, tt_sec, data_detrend, p0=p0, full_output=True)
+            sin_params, *_ = curve_fit(
+                sinusoid, tt_sec, data_detrend, p0=p0,
+                bounds=(lower, upper), full_output=True
+            )
             fit_result = {
                 'T_hr':         sin_params[0],
                 'amplitude_km': np.abs(sin_params[1]),
@@ -344,7 +354,7 @@ def sin_fit(
     intermediate['data_detrend_no_bp'] = data_detrend_no_bp
 
     # --- 5) Sinusoidal fitting ---
-    all_sin_fits = fit_sinusoids(tt_sec, data_detrend, T_hr_guesses)
+    all_sin_fits = fit_sinusoids(tt_sec, data_detrend, T_hr_guesses, lstid_T_hr_lim)
 
     if all_sin_fits:
         sin_params   = all_sin_fits[0].copy()

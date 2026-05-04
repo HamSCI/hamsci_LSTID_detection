@@ -153,7 +153,10 @@ class HDF5PolarsLoader(BaseSpotLoader):
         """Chunked h5py load + filter for a single HDF5 file. Returns filtered Polars DataFrame."""
         filtered_chunks = []
         with h5py.File(file_path, 'r') as f:
-            ds = f['Data/Table Layout']
+            node = f['Data/Table Layout']
+            # Production Madrigal files: compound Dataset directly.
+            # PyTables-format files (test fixtures): Group with data at 'table'.
+            ds = node if isinstance(node, h5py.Dataset) else node['table']
             n_rows = ds.shape[0]
             for start in range(0, n_rows, self.chunk_size):
                 chunk = self._read_chunk(ds, start)

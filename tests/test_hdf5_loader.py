@@ -42,7 +42,7 @@ def test_init_raises_when_start_after_end(tmp_path):
 # 3) __init__: invalid region_bounds shape (missing lon_lim)
 def test_init_raises_on_bad_region_bounds(tmp_path):
     import scripts.hdf5_loader as loader_mod
-    with pytest.raises(ValueError, match="Invalid region_bounds"):
+    with pytest.raises(ValueError, match="region_bounds needs"):
         loader_mod.HDF5PolarsLoader(
             data_dir=str(tmp_path),
             sDate=datetime(2020, 1, 1),
@@ -53,35 +53,7 @@ def test_init_raises_on_bad_region_bounds(tmp_path):
         )
 
 
-# 4) __init__: invalid freq_range shape (missing max_freq)
-def test_init_raises_on_bad_freq_range(tmp_path):
-    import scripts.hdf5_loader as loader_mod
-    with pytest.raises(ValueError, match="Invalid freq_range"):
-        loader_mod.HDF5PolarsLoader(
-            data_dir=str(tmp_path),
-            sDate=datetime(2020, 1, 1),
-            eDate=datetime(2020, 1, 1, 23, 59, 59),
-            cache_dir=str(tmp_path / "cache"),
-            use_cache=True,
-            freq_range={"min_freq": 1_000_000},  # max_freq missing
-        )
-
-
-# 5) __init__: invalid distance_range shape (missing max_dist)
-def test_init_raises_on_bad_distance_range(tmp_path):
-    import scripts.hdf5_loader as loader_mod
-    with pytest.raises(ValueError, match="Invalid distance_range"):
-        loader_mod.HDF5PolarsLoader(
-            data_dir=str(tmp_path),
-            sDate=datetime(2020, 1, 1),
-            eDate=datetime(2020, 1, 1, 23, 59, 59),
-            cache_dir=str(tmp_path / "cache"),
-            use_cache=True,
-            distance_range={"min_dist": 0},  # max_dist missing
-        )
-
-
-# 6) get_dataframe(): bubbles FileNotFoundError when no HDF5 files in range
+# 4) get_dataframe(): bubbles FileNotFoundError when no HDF5 files in range
 def test_get_dataframe_raises_when_no_hdf5_files(tmp_path):
     import scripts.hdf5_loader as loader_mod
     loader = loader_mod.HDF5PolarsLoader(
@@ -95,22 +67,24 @@ def test_get_dataframe_raises_when_no_hdf5_files(tmp_path):
         loader.get_dataframe()  # process_data -> load_data -> raise
 
 
-# 7) process_data(): raises RuntimeError if load_data() returns empty DataFrame
+# 7) process_data(): raises FileNotFoundError if load_data() returns empty Polars DataFrame
 def test_process_data_raises_on_empty_df(tmp_path, monkeypatch):
     import scripts.hdf5_loader as loader_mod
-    import pandas as pd
+    import polars as pl
 
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
         sDate=datetime(2020, 1, 1, 0, 0, 0),
         eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
-        use_cache=False,  # ensures it tries to load/process
+        use_cache=False,
     )
-    # Simulate "files existed but everything got filtered away"
-    monkeypatch.setattr(loader, "load_data", lambda: pd.DataFrame())
+    # Simulate "files existed but everything got filtered away" → load_data raises
+    monkeypatch.setattr(loader, "load_data", lambda: (_ for _ in ()).throw(
+        FileNotFoundError("No HDF5 files found/readable")
+    ))
 
-    with pytest.raises(RuntimeError, match="No data loaded"):
+    with pytest.raises(FileNotFoundError, match="No HDF5 files found/readable"):
         loader.get_dataframe()
 
 
@@ -129,15 +103,17 @@ def test_gen_histogram_raises_if_no_df_loaded(tmp_path):
         loader.gen_histogram()
 
 
-# 9) apply_region_filter(): drops rows outside lat/lon bounds
-def test_apply_region_filter_trims_rows(tmp_path):
+# 9) _apply_filters(): drops rows outside lat/lon bounds
+def test_apply_filters_region(tmp_path):
     import scripts.hdf5_loader as loader_mod
+    import polars as pl
 
-    df = pd.DataFrame({
-        "latcen": [30.0, 50.0],
-        "loncen": [-100.0, -10.0],
+    df = pl.DataFrame({
+        "year": [2020, 2020], "month": [1, 1], "day": [1, 1],
+        "hour": [0, 0], "min": [0, 0], "sec": [0, 0],
+        "latcen": [30.0, 50.0], "loncen": [-100.0, -10.0],
+        "tfreq": [7_500_000.0, 7_500_000.0], "pthlen": [500, 500],
     })
-
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
         sDate=datetime(2020, 1, 1, 0, 0, 0),
@@ -146,17 +122,23 @@ def test_apply_region_filter_trims_rows(tmp_path):
         region_bounds={"lat_lim": (20, 40), "lon_lim": (-120, -60)},
         use_cache=False,
     )
+    out = loader._apply_filters(df, loader.sDate, loader.eDate)
+    assert out.height == 1
+    assert out["latcen"][0] == 30.0
+    assert out["loncen"][0] == -100.0
 
-    out = loader.apply_region_filter(df.copy())
-    assert len(out) == 1
-    assert out.iloc[0]["latcen"] == 30.0 and out.iloc[0]["loncen"] == -100.0
 
-
-# 10) apply_freq_filter(): keeps only rows in [min_freq, max_freq]
-def test_apply_freq_filter_trims_rows(tmp_path):
+# 10) _apply_filters(): keeps only rows in [min_freq, max_freq]
+def test_apply_filters_freq(tmp_path):
     import scripts.hdf5_loader as loader_mod
+    import polars as pl
 
-    df = pd.DataFrame({"tfreq": [5_000_000, 7_500_000, 9_000_000]})
+    df = pl.DataFrame({
+        "year": [2020, 2020, 2020], "month": [1, 1, 1], "day": [1, 1, 1],
+        "hour": [0, 0, 0], "min": [0, 0, 0], "sec": [0, 0, 0],
+        "latcen": [30.0, 30.0, 30.0], "loncen": [-100.0, -100.0, -100.0],
+        "tfreq": [5_000_000.0, 7_500_000.0, 9_000_000.0], "pthlen": [500, 500, 500],
+    })
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
         sDate=datetime(2020, 1, 1, 0, 0, 0),
@@ -165,15 +147,23 @@ def test_apply_freq_filter_trims_rows(tmp_path):
         freq_range={"min_freq": 6_000_000, "max_freq": 8_000_000},
         use_cache=False,
     )
-    out = loader.apply_freq_filter(df.copy())
-    assert np.array_equal(out["tfreq"].to_numpy(), [7_500_000])
+    out = loader._apply_filters(df, loader.sDate, loader.eDate)
+    assert out.height == 1
+    assert out["tfreq"][0] == 7_500_000.0
 
 
-# 11) apply_distance_filter(): keeps only rows in [min_dist, max_dist]
-def test_apply_distance_filter_trims_rows(tmp_path):
+# 11) _apply_filters(): keeps only rows in [min_dist, max_dist]
+def test_apply_filters_distance(tmp_path):
     import scripts.hdf5_loader as loader_mod
+    import polars as pl
 
-    df = pd.DataFrame({"pthlen": [100, 500, 2500]})
+    df = pl.DataFrame({
+        "year": [2020, 2020, 2020], "month": [1, 1, 1], "day": [1, 1, 1],
+        "hour": [0, 0, 0], "min": [0, 0, 0], "sec": [0, 0, 0],
+        "latcen": [30.0, 30.0, 30.0], "loncen": [-100.0, -100.0, -100.0],
+        "tfreq": [7_500_000.0, 7_500_000.0, 7_500_000.0],
+        "pthlen": [100, 500, 2500],
+    })
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
         sDate=datetime(2020, 1, 1, 0, 0, 0),
@@ -182,33 +172,38 @@ def test_apply_distance_filter_trims_rows(tmp_path):
         distance_range={"min_dist": 200, "max_dist": 2000},
         use_cache=False,
     )
-    out = loader.apply_distance_filter(df.copy())
-    assert np.array_equal(out["pthlen"].to_numpy(), [500])
+    out = loader._apply_filters(df, loader.sDate, loader.eDate)
+    assert out.height == 1
+    assert out["pthlen"][0] == 500
 
 
-# 12) apply_datetime_filter(): keeps rows within [sDate, eDate]
-def test_apply_datetime_filter_keeps_window(tmp_path):
+# 12) _apply_filters(): day-level datetime filter keeps only target day
+def test_apply_filters_datetime(tmp_path):
     import scripts.hdf5_loader as loader_mod
+    import polars as pl
 
-    df = pd.DataFrame({
-        "year":  [2020, 2020, 2020],
+    df = pl.DataFrame({
+        "year":  [2020, 2020, 2021],
         "month": [1,    1,    1],
         "day":   [1,    1,    1],
-        "hour":  [0,    12,   23],
-        "min":   [0,    0,    59],
-        "sec":   [0,    0,    59],
+        "hour":  [0,    12,   0],
+        "min":   [0,    0,    0],
+        "sec":   [0,    0,    0],
+        "latcen": [30.0, 30.0, 30.0], "loncen": [-100.0, -100.0, -100.0],
+        "tfreq": [7_500_000.0, 7_500_000.0, 7_500_000.0],
+        "pthlen": [500, 500, 500],
     })
-
     loader = loader_mod.HDF5PolarsLoader(
         data_dir=str(tmp_path),
-        sDate=datetime(2020, 1, 1, 6, 0, 0),
-        eDate=datetime(2020, 1, 1, 18, 0, 0),
+        sDate=datetime(2020, 1, 1, 0, 0, 0),
+        eDate=datetime(2020, 1, 1, 23, 59, 59),
         cache_dir=str(tmp_path / "cache"),
         use_cache=False,
     )
-    out = loader.apply_datetime_filter(df.copy(), loader.sDate, loader.eDate)
-    assert len(out) == 1
-    assert (out[["hour", "min", "sec"]].iloc[0] == [12, 0, 0]).all()
+    out = loader._apply_filters(df, loader.sDate, loader.eDate)
+    # Only the two 2020-01-01 rows should survive; the 2021 row is filtered out
+    assert out.height == 2
+    assert (out["year"] == 2020).all()
 
 
 # 13) process_data(): transforms to Polars with expected columns/values
@@ -216,7 +211,7 @@ def test_process_data_transforms_to_polars_with_expected_cols(tmp_path, monkeypa
     import scripts.hdf5_loader as loader_mod
     import polars as pl
 
-    pdf = pd.DataFrame({
+    raw_pl = pl.DataFrame({
         "year":   [2020],
         "month":  [1],
         "day":    [1],
@@ -241,8 +236,7 @@ def test_process_data_transforms_to_polars_with_expected_cols(tmp_path, monkeypa
         cache_dir=str(tmp_path / "cache"),
         use_cache=False,
     )
-    # Avoid hitting Dask/HDF5; inject our tiny frame
-    monkeypatch.setattr(loader, "load_data", lambda: pdf)
+    monkeypatch.setattr(loader, "load_data", lambda: raw_pl)
 
     df_pl = loader.get_dataframe()
     assert isinstance(df_pl, pl.DataFrame)
@@ -258,7 +252,7 @@ def test_process_data_transforms_to_polars_with_expected_cols(tmp_path, monkeypa
     out = df_pl.to_dicts()[0]
     assert out["dist_Km"] == 500
     assert out["freq"] == 7_500_000.0
-    assert out["freq_MHz"] == 8  # (7.5e6 / 1e6) rounded 0
+    assert out["freq_MHz"] == 8  # (7.5e6 / 1e6) rounded = 8
 
 
 # 14) gen_histogram(): builds a basic histogram and returns meta

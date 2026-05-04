@@ -243,7 +243,7 @@ def plot_sin_fit_table(ax, fit_result: FitOutput, *, label='f'):
                 transform=ax.transAxes, fontsize=20)
 
 
-def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput, *, label='b'):
+def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput, *, label='b', ylim=None):
     """
     Panel (b): Polynomial Fit - heatmap with polynomial overlay
     
@@ -285,10 +285,11 @@ def plot_heatmap_with_polynomial(ax, ax_cb, fit_result: FitOutput, *, label='b')
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
     ax.set_ylabel('Range [km]')
-    ax.set_ylim(900, 1600)
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
 
-def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput, *, label='a'):
+def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput, *, label='a', ylim=None):
     """
     Panel (a): Coefficient of Variance Selection
     
@@ -335,12 +336,13 @@ def plot_heatmap_with_variance(ax, ax_cb, fit_result: FitOutput, *, label='a'):
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
     ax.set_ylabel('Range [km]')
-    ax.set_ylim(900, 1600)
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
 
-def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput, *, label='e'):
+def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput, *, label='e', ylim=None):
     """
-    Panel (g): Polynomial Detrend + Sin Fit
+    Polynomial Detrend + Sin Fit
     
     Parameters
     ----------
@@ -375,7 +377,8 @@ def plot_heatmap_with_final_fit(ax, ax_cb, fit_result: FitOutput, *, label='e'):
     fmt_xaxis(ax, xlim)
     ax.set_title(f"({label}) Polynomial Detrend + Sin Fit", loc='left')
     ax.set_ylabel('Range [km]')
-    ax.set_ylim(900, 1600)
+    if ylim is not None:
+        ax.set_ylim(ylim)
     ax.legend(loc='upper center', fontsize='x-small', ncols=4)
 
 
@@ -552,6 +555,48 @@ def plot_rescaled_contours(ax, ax_cb, fit_result: FitOutput, ylim, *, label='d')
                  loc='left', fontweight='bold')
     ax.set_ylabel('Range [km]')
     ax.set_ylim(ylim)
+    fmt_xaxis(ax, xlim)
+
+
+def plot_quantile_lines(ax, ax_cb, fit_result: FitOutput, ylim, *, label='e'):
+    """
+    Heatmap with all quantile threshold lines, LOWESS smoothed line, and detected edge.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    ax_cb : matplotlib.axes.Axes
+        Colorbar axis
+    fit_result : FitOutput
+    ylim : tuple
+    label : str
+    """
+    import matplotlib.cm as cm
+
+    arr             = fit_result.intermediate['preprocessed_arr']
+    arr_times       = fit_result.intermediate['preprocessed_times']
+    ranges_km       = fit_result.edge_data.ranges_km
+    edge_times      = fit_result.edge_data.edge_times
+    edge_positions  = fit_result.edge_data.edge_positions
+    quantile_lines  = fit_result.edge_data.quantile_lines   # (n_times, n_quantiles)
+    quantile_values = fit_result.edge_data.quantile_values
+    xlim            = fit_result.meta['time_limits']['xlim']
+
+    mpbl = ax.pcolormesh(arr_times, ranges_km, arr, cmap='Greys_r',
+                         shading='nearest', rasterized=True, antialiased=False)
+
+    palette = cm.get_cmap('cool', len(quantile_values))
+    for i, q in enumerate(quantile_values):
+        ax.plot(arr_times, quantile_lines[:, i], color=palette(i),
+                lw=1.5, alpha=0.8, label=f'Q{q:.2f}')
+
+    ax.plot(edge_times, edge_positions, color='cyan', lw=2.5, ls='-', label='Detected Edge')
+
+    plt.colorbar(mpbl, cax=ax_cb, orientation='vertical', label='Normalized Spot Density (a.u.)')
+    ax.set_title(f"({label}) Quantile Threshold Lines", loc='left', fontweight='bold')
+    ax.set_ylabel('Range [km]')
+    ax.set_ylim(ylim)
+    ax.legend(loc='upper center', fontsize='x-small', ncols=4)
     fmt_xaxis(ax, xlim)
 
 
