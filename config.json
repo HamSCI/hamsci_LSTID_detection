@@ -1,9 +1,9 @@
 {
   "region_name": "Continental US",
-  "start": "2018-12-15T00:00:00",
-  "end": "2018-12-15T23:59:59",
+  "start": "2030-01-01T00:00:00",
+  "end": "2030-01-10T23:59:59",
   "freq": 14,
-  "data_dir": "data/madrigal",
+  "data_dir": "data/synthetic_hdf5",
   "cache_dir": "cache",
   "distance_range": { "min_dist": 0, "max_dist": 3000 },
   "use_cache": true,
@@ -39,7 +39,7 @@
   },
 
   "plotting": {
-    "ylim": [0, 2000],
+    "ylim": [500, 2000],
     "cb_pad": 0.125,
     "output_dir": "output/daily_plots"
   }

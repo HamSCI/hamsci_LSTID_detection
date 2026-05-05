@@ -183,6 +183,23 @@ def thesis_plot_all_panels_no_labels(
                         strip_mode='strip_all')
 
 
+def thesis_plot_all_panels_full(
+    fit_result: FitOutput,
+    df,
+    *,
+    output_dir: str,
+    cb_pad: float,
+    ylim: tuple,
+    **_,
+):
+    """Keep all titles (including panel letter), all axis labels, all ticks — nothing stripped.
+    Saves to: {parent}/thesis/full/{panel_name}/{YYYYMMDD}_{panel_name}.png
+    """
+    return _thesis_plot(fit_result, df,
+                        output_dir=output_dir, ylim=ylim,
+                        strip_mode='full')
+
+
 # ---------------------------------------------------------------------------
 # Shared implementation
 # ---------------------------------------------------------------------------
@@ -209,8 +226,9 @@ def _thesis_plot(fit_result, df, *, output_dir, ylim, strip_mode):
     def _strip(ax, fig, ax_cb=None):
         if strip_mode == 'strip_all':
             _strip_all_labels(ax, fig, ax_cb)
-        else:
+        elif strip_mode == 'strip_titles':
             _strip_label(ax)
+        # 'full': nothing stripped
 
     saved = []
 

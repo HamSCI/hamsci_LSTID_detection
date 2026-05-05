@@ -237,12 +237,12 @@ def stack_plot_sinfit_v1(
     # Panel (a) — Coefficient of Variance Selection
     ax = fig.add_subplot(gs[0, 0])
     ax_cb = fig.add_subplot(gs[0, 1])
-    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0])
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0], ylim=ylim)
 
     # Panel (b) — Polynomial Fit
     ax = fig.add_subplot(gs[1, 0])
     ax_cb = fig.add_subplot(gs[1, 1])
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1])
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1], ylim=ylim)
 
     # Panel (c) — Detrended edge
     ax = fig.add_subplot(gs[2, 0])
@@ -264,7 +264,7 @@ def stack_plot_sinfit_v1(
     # Panel (g) — Final fit overlay
     ax = fig.add_subplot(gs[6, 0])
     ax_cb = fig.add_subplot(gs[6, 1])
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[6])
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[6], ylim=ylim)
 
     fig.suptitle(
         f'Sinusoid Fitting \n{date.strftime("%Y-%m-%d")}',
@@ -344,12 +344,12 @@ def stack_plot_sinfit_v2(
     # Panel (a) — Coefficient of Variance Selection
     ax = fig.add_subplot(gs[0, 0])
     ax_cb = fig.add_subplot(gs[0, 1])
-    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0])
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0], ylim=ylim)
 
     # Panel (b) — Polynomial Fit
     ax = fig.add_subplot(gs[1, 0])
     ax_cb = fig.add_subplot(gs[1, 1])
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1])
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1], ylim=ylim)
 
     # Panel (c) — Detrended edge
     ax = fig.add_subplot(gs[2, 0])
@@ -363,7 +363,7 @@ def stack_plot_sinfit_v2(
     # Panel (e) — Final fit overlay
     ax = fig.add_subplot(gs[4, 0])
     ax_cb = fig.add_subplot(gs[4, 1])
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[4])
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[4], ylim=ylim)
 
     fig.suptitle(
         f'Sinusoid Fitting \n{date.strftime("%Y-%m-%d")}',
@@ -444,12 +444,12 @@ def stack_plot_sinfit_v3(
     # Panel (a) — Coefficient of Variance Selection
     ax = fig.add_subplot(gs[0, 0])
     ax_cb = fig.add_subplot(gs[0, 1])
-    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0])
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label=labels[0], ylim=ylim)
 
     # Panel (b) — Polynomial Fit
     ax = fig.add_subplot(gs[1, 0])
     ax_cb = fig.add_subplot(gs[1, 1])
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1])
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label=labels[1], ylim=ylim)
 
     # Panel (c) — Detrended edge
     ax = fig.add_subplot(gs[2, 0])
@@ -462,7 +462,7 @@ def stack_plot_sinfit_v3(
     # Panel (e) — Final fit overlay
     ax = fig.add_subplot(gs[4, 0])
     ax_cb = fig.add_subplot(gs[4, 1])
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[4])
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label=labels[4], ylim=ylim)
 
     fig.suptitle(
         f'Sinusoid Fitting \n{date.strftime("%Y-%m-%d")}',
@@ -598,7 +598,7 @@ def plot_all_panels_individual(
 
     # 06 — heatmap + variance CV
     fig, ax, ax_cb = _heatmap_fig()
-    plot_heatmap_with_variance(ax, ax_cb, fit_result, label='a')
+    plot_heatmap_with_variance(ax, ax_cb, fit_result, label='a', ylim=ylim)
     _strip_label(ax)
     fig.suptitle(date_title, fontweight='bold')
     fig.tight_layout(rect=[0, 0, 1, 0.93])
@@ -606,7 +606,7 @@ def plot_all_panels_individual(
 
     # 07 — heatmap + polynomial fit
     fig, ax, ax_cb = _heatmap_fig()
-    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label='b')
+    plot_heatmap_with_polynomial(ax, ax_cb, fit_result, label='b', ylim=ylim)
     _strip_label(ax)
     fig.suptitle(date_title, fontweight='bold')
     fig.tight_layout(rect=[0, 0, 1, 0.93])
@@ -649,7 +649,7 @@ def plot_all_panels_individual(
 
     # 12 — heatmap + final poly+sin fit
     fig, ax, ax_cb = _heatmap_fig()
-    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label='g')
+    plot_heatmap_with_final_fit(ax, ax_cb, fit_result, label='g', ylim=ylim)
     _strip_label(ax)
     fig.suptitle(date_title, fontweight='bold')
     fig.tight_layout(rect=[0, 0, 1, 0.93])
