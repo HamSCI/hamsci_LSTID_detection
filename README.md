@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/847098909.svg)](https://doi.org/10.5281/zenodo.13630866)
+
 # hamsci_LSTID_detection
 
 Automated detection of **Large Scale Traveling Ionospheric Disturbances (LSTIDs)** from amateur radio spot data (RBN, PSKReporter, WSPRNet) stored in Madrigal HDF5 format.
