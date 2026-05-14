@@ -29,6 +29,25 @@ scipy==1.13.1
 statsmodels==0.14.2
 ```
 
+# Data
+
+Input data is Madrigal daily HDF5 files named `rsd{YYYY-MM-DD}.01.hdf5`, downloaded from the [Cedar Madrigal database](http://cedar.openmadrigal.org) (instrument 8308).
+
+A download script is provided in `download_madrigal/`:
+
+1. Install the Madrigal web API client:
+   ```bash
+   pip install madrigalWeb
+   ```
+2. Edit `download_madrigal/download_madrigal_daily_hdf5.sh` — set `startDate`, `endDate`, and your `user_email` / `user_fullname` / `user_affiliation`.
+3. Run:
+   ```bash
+   chmod +x download_madrigal/download_madrigal_daily_hdf5.sh
+   ./download_madrigal/download_madrigal_daily_hdf5.sh
+   ```
+
+Files will be downloaded to `data/madrigal/`.
+
 # Instructions
 
 1. Clone the repository and install:
