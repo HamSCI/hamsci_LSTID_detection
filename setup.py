@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from distutils.core import setup
+from setuptools import setup
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
@@ -11,6 +11,6 @@ setup(name='hamsci_LSTID_detect',
       author='Nathaniel A. Frissell',
       author_email='nathaniel.frissell@scranton.edu',
       url='https://hamsci.org',
-      packages=['hamsci_LSTID_detect'],
+      packages=['scripts'],
       install_requires=requirements
      )

@@ -25,5 +25,10 @@ REGIONS = {
     'region_name': 'Continental US',
         'lat_lim': [24.5, 49.5],     
         'lon_lim': [-125, -66.5]   
-    }
+    },
+    'Global': {
+      'region_name': 'Global',
+      'lat_lim': [-90, 90],
+      'lon_lim': [-180, 180]
+  }
 }

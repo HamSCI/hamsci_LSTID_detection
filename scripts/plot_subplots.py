@@ -445,7 +445,8 @@ def plot_spot_location_heatmap(ax, ax_cb, df, date, *, label='a'):
                          norm=LogNorm(vmin=1, clip=True),
                          transform=ccrs.PlateCarree())
 
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.8, edgecolor='white')
+    ax.add_feature(cfeature.BORDERS, linewidth=0.5, edgecolor='white')
     ax.add_feature(cfeature.STATES, linewidth=0.5, edgecolor='white')
 
     avg_lat = float(lats.mean())
