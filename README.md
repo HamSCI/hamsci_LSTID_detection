@@ -1,102 +1,132 @@
 # hamsci_LSTID_detection
-[![DOI](https://zenodo.org/badge/847098909.svg)](https://zenodo.org/doi/10.5281/zenodo.13630866)
 
-Code for automatically detecting Large Scale Traveling Ionospheric Disturbances (LSTIDs) from ham radio spot data.
+Automated detection of **Large Scale Traveling Ionospheric Disturbances (LSTIDs)** from amateur radio spot data (RBN, PSKReporter, WSPRNet) stored in Madrigal HDF5 format.
 
-Developed by the HamSCI NASA Space Weather Operations to Research (SWO2R) Team with major contributions by:
+Developed by the HamSCI NASA Space Weather Operations to Research (SWO2R) Team:
 
-* Nathaniel Frissell W2NAF
-* Nicholas Callahan
-* Diego Sanchez KD2RLM
-* Bill Engelke AB4EJ
-* Mary Lou West KC2NMC
+- Nathaniel Frissell W2NAF
+- Nicholas Callahan
+- Diego Sanchez KD2RLM
+- Bill Engelke AB4EJ
+- Mary Lou West KC2NMC
 
 # Requirements
-This code was tested on an x86 Ubuntu 22.04 LTS Linux machine with python v3.11.9 and the following libraries:
+
+Python 3.11+ on Linux (tested on Ubuntu 22.04 / WSL2).
+
 ```
-dask==2024.5.0
-matplotlib==3.8.4
-numpy==2.1.0
+cartopy==0.24.1
+dask==2024.8.2
+h5py==3.11.0
+matplotlib==3.10.8
+numpy==1.26.4
 pandas==2.2.2
-scipy==1.14.1
+pillow==12.1.1
+polars==1.35.1
+pyarrow==16.1.0
+pysolar==0.13
+scipy==1.13.1
 statsmodels==0.14.2
-xarray==2023.6.0
 ```
+
+# Data
+
+Input data is Madrigal daily HDF5 files named `rsd{YYYY-MM-DD}.01.hdf5`, downloaded from the [Cedar Madrigal database](http://cedar.openmadrigal.org) (instrument 8308).
+
+A download script is provided in `download_madrigal/`:
+
+1. Install the Madrigal web API client:
+   ```bash
+   pip install madrigalWeb
+   ```
+2. Edit `download_madrigal/download_madrigal_daily_hdf5.sh` — set `startDate`, `endDate`, and your `user_email` / `user_fullname` / `user_affiliation`.
+3. Run:
+   ```bash
+   chmod +x download_madrigal/download_madrigal_daily_hdf5.sh
+   ./download_madrigal/download_madrigal_daily_hdf5.sh
+   ```
+
+Files will be downloaded to `data/madrigal/`.
 
 # Instructions
-1. Clone GitHub Repository
-2. `pip install -e .`
-3. Place raw spot data files into `raw_data` directory.
-    1. Raw spot data should be bzip2 compressed daily files.
-    2. Names should be in the form of: `2018-11-01_PSK.csv.bz2`, `2018-11-01_RBN.csv.bz2`, and `2018-11-01_WSPR.csv.bz2`, etc.
-    3. Data files for 1 November 2018 - 30 April 2019 are available from https://doi.org/10.5281/zenodo.10673981. Due to Zenodo file number limitations, data files in this repository are combined into one *.tar file for each month.
-4. Edit parameters in the top of `run_LSTID_detection.py`.
-5. Run `./run_LSTID_detection.py`
 
-# Notes
-Using multiprocessing on a 64-thread machine with 512 GB RAM, this code takes about 12 minutes to process the 1 November 2018 - 30 April 2019 data from https://doi.org/10.5281/zenodo.10673981.
+1. Clone the repository and install:
+   ```bash
+   pip install -e .
+   ```
+2. Place Madrigal HDF5 data files into the directory specified by `data_dir` in your config.
+   - Files must be named `rsd{YYYY-MM-DD}.01.hdf5`.
+3. Create a config file in the `config/` directory. Each config file defines a complete experiment (date range, region, frequency band, data paths, and all algorithm parameters). Use `config/config_test.json` as a starting template.
+4. Run the pipeline, passing your config:
+   ```bash
+   python run_LSTID_detection.py -p config/config_test.json
+   ```
 
-# Full Algorithm Description
-## 1. Data Loading and Gridding
-Data Loading and Gridding is handled by `hamsci_LSTID_detect.data_loading.RawSpotProcessor()`.
+The `config/` directory is intended to hold one JSON file per experiment or parameter set, making runs fully reproducible and easy to track. Key config options: `data_dir`, `cache_dir`, `region_name` (see `scripts/regions.py`), `freq` (MHz), `distance_range`, `use_cache`, `n_workers`.
 
-1. For each day, RBN, PSK, and WSPRNet spot data is combined into a single data frame.
-2. Data is filtered based on frequency, TX-RX midpoint location, and TX-RX ground range. For Frissell et al. (2024, GRL), the following filters are used, which corresponds to 14 MHz signals over North America:
-    1. $$20^{\circ} < lat < 60^{\circ}$$
-    2. $$-160^{\circ} < lon < -60^{\circ}$$
-    3. 14 MHz < f < 15 MHz
-    4. 0 km < R_gc < 3000 km
-3. Filtered data is gridded into 10 km range by 1 minute bins.
+# Algorithm Description
 
-## 2. Gridded Array Re-scaling
-Gridded array re-scaling is handled by `hamsci_LSTID_detect.data_loading.create_xarr()`.
+## 1. Data Loading (`scripts/hdf5_loader.py`)
+Reads Madrigal HDF5 files in chunks, applies geographic, frequency, and distance filters using Polars, and bins spots into a 2D histogram (10 km × 1 min bins). Results are cached as Parquet files.
 
-1. Data array is trimmed so that only daylight hours in North America are used (1200-2359 UTC).
-2. A scaled version $M_{ad}$ of the gridded array $A$ is computed by `hamsci_LSTID_detect.data_loading.mad()` as follows:
-$$M_{ad} = \frac{|A-\mbox{Med}(A)|}{\mbox{max}(\mbox{Med}(A),0.05)}$$
+## 2. Preprocessing (`scripts/heatmap_preprocess.py`)
+Trims to daylight hours, applies column-wise MAD normalisation, a 2D Gaussian filter (σ = 4.2), and rescales to uint8.
 
-## 3. Skip Distance Edge-Detection
-Skip distance edge-detection is handled by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+## 3. Edge Detection (`scripts/edge_detect.py`)
+Builds quantile threshold stacks (q = 0.4, 0.5, 0.6), smooths with LOWESS, removes outliers by absolute deviation, and selects the most stable edge.
 
-1. The x- and y- dimensions of the gridded array are trimmed by 8%.
-2. A `scipy.ndimage.gaussian_filter()` with $\sigma=(4.2, 4.2)$ is applied to the gridded array.
-3. The gridded array has the minimum subtracted from the array so the lower bound is 0.
-4. A maximum of the gridded array, excluding upper outliers, is taken by selecting the value of the `occurence_max=60`th pixel's largest value.
-5. The gridded array is re-scaled by the maximum and `i_max=30` values so that the outlier adjusted maximum is re-scaled to 30, and all float values are rounded to integers, so the array consists of approximately 30 discrete thresholds.
-6. For each unique value in the integer array, a lower threshold line is calculated by taking the index of the lowest point in each column such that the value at that point is greater than the threshold.
-7. All thresholds for the integer array are stacked vertically, and threshold values below a specified y location are set to `np.nan`.
-8. Column-wise, for each value `q` in `qs=[.4,.5,.6]`, a scalar value is selected to represent the column as the detected edge by selecting the `q`th quantile value with nans ignored.
-9. Using the edges for each value in `[.4,.5,.6]`, each edge has outlier points removed, where any point that deviates more than `max_abs_dev=20` vertical pixels from the smoothed edge is interpolated with `scipy.interpolate.CubicSpline`.
-10. After outlier removal, the edge with the lowest standard deviation against the smoothed and interpolated version of the edge is returned as `min_line` and `minz_line`, in the original and smoothed form respectively.
-11. `min_line` is returned as the raw detected edge for the image, along with the unselected edges corresponding to the `qs`, and the `minz_line` for comparison.
+## 4. Sinusoidal Fitting (`scripts/sinusoid_fitting.py`)
+1. Computes a 15-minute rolling coefficient of variation (CV) on the detected edge.
+2. Selects the largest contiguous stable region (CV < 0.05) between 1300–2300 UTC.
+3. Fits a 2nd-degree polynomial to detrend the edge.
+4. Applies an optional 1–4.5 hr Butterworth bandpass filter.
+5. Runs `curve_fit` for period guesses T = [1, 1.5, 2, 2.5, 3, 3.5, 4] hr; best R² selected.
 
-## 4. Sine Fitting
-A theoretical sinusoid is fit to the detected edge by `hamsci_LSTID_detect.edge_detection.run_edge_detect()`.
+Processing is multiprocessed — each day runs as an independent worker via `ProcessPoolExecutor`.
 
-1. A 15 minute rolling coefficient of variation $CV = \sigma/\mu$ is computed on the raw detected edge for use as a quality parameter.
-2. The largest contiguous time period between 1330 and 2230 UTC where $CV < 0.5$ is selected as "good".
-3. A 2nd-degree polynomial is fit to the good period.
-4. The raw detected edge within this time period is detrended using a least-squares best-fit second degree polynomial.
-5. A $1 < T < 4.5$ hr band-pass filter is applied to the detrended edge.
-6. This filtered, detrended result is curve-fit to $$A\sin(2\pi ft+\phi) + mt +b$$ to determine the LSTID amplitude $A$ and period $T=1/f$.
-     1. `scipy.optimize.curve_fit()` is used as the curve fitter.
-     2. The curve fit routine is run for each of the following initial period guesses: $T_{hr}$ = [1,1.5,2,2.5,3,3.5,4].
-     3. Other parameter initial guesses are as follows:
-        - `guess['amplitude_km']   = np.ptp(data_detrend)/2.`
-        - `guess['phase_hr']       = 0.`
-        - `guess['offset_km']      = np.mean(data_detrend)`
-        - `guess['slope_kmph']     = 0.`
-     4. The fit with the highest $r^2$ value is selected as the best fit.
-  
-# Example Daily Output
-![Output of LSTID Autodetection Algorithm for 15 December 2018](20181215_curveCombo.png)
+# Plotting
 
-Figure 1 shows LSTID automatic detection plot for 15 December 2018.
+Plotting is handled by modules in `scripts/`. The general structure has two layers:
 
-- Panel (a): Heatmap of re-scaled, smoothed, and thresholded RBN, PSKReporter, and WSPRNet data as a function of communications ground range versus time. Only 14 MHz band data with communications midpoints over the US ($$20^{\circ} < lat < 60^{\circ}$$ and $$-160^{\circ} < lon < -60^{\circ}$$) are used. Data are gridded in 10 km x 1 min bins.
-- Panel (b): Heatmap data from (a) with algorithm fit overlays. Blue line is raw detected edge; white dashed line is the final sinusoid fit with the trend added back in. Gray line is the 15-minute rolling coefficient of variation quality parameter. Green dashed vertical lines mark the start and end times used for curve fitting.
-- Panel (c): Blue line is the detrended, band-pass filtered detected edge. Red dashed line is the sinusoid fit to the detrended edge. Green dashed vertical lines mark the start and end times used for curve fitting.
-- Panel (d): Curve-fit parameters for the 2nd degree polynomial detrend fit and the sinusoid curve fit.
+- **Panel functions** (`plot_subplots.py`) — individual plot panels that draw onto axes passed in explicitly. These are the building blocks.
+- **Composite plot functions** (`plot_lstid_paper.py`, `dfs_thesis.py`) — assemble one or more panels into a full figure and save it to disk. Each function takes `fit_result`, optionally `df`, and `**plot_params` (unpacked from the `plotting` block in your config).
+
+To enable or add a plot, edit the plotting block inside `process_one_day()` in `run_LSTID_detection.py`, immediately after the `sin_fit()` call:
+
+```python
+fit_result = sin_fit(edge_result, **fit_params)
+
+# ← add or uncomment plot calls here
+plot_all_panels_individual(fit_result, df, **plot_params)
+thesis_plot_all_panels_full(fit_result, df, **plot_params)
+```
+
+Any composite function imported from the plotting modules can be dropped in at this point. The `**plot_params` dict supplies `output_dir`, `ylim`, and `cb_pad` from the config automatically.
+
+# Synthetic Data Generation
+
+Generates Madrigal-format HDF5 files compatible with the pipeline for ML training. Dates use 2030+ to avoid collision with real data.
+
+```bash
+# Generate synthetic HDF5 files
+python synthetic_data_gen/gen_synthetic_hdf5.py --n_days 200 --output_dir data/synthetic_hdf5
+
+# Build unified ML training manifest (synthetic + real pipeline output)
+python synthetic_data_gen/build_ml_manifest.py \
+    --synthetic_manifest data/synthetic_hdf5/manifest.csv \
+    --real_csv_dir output/summary_csv \
+    --real_hdf5_dir data/madrigal \
+    --output data/ml_manifest.csv --skip_missing_hdf5
+```
+
+Each synthetic day embeds a sinusoidal LSTID of randomised amplitude (0–100 km) and period (1–4.5 hr) on a diurnal quadratic baseline. 20% of days are flat (A = 0), 20% are high-noise, and 30% contain random data gaps. The manifest records `T_hr` and `amplitude_km` as regression targets alongside a `curriculum_phase` label (1 = clear, 2 = ambiguous). Use `--phase1_max_amp` and `--phase1_min_amp` to control the phase boundary.
+
+# Tests
+
+```bash
+python -m pytest tests/ -v
+```
 
 # Acknowledgments
+
 This work was supported by NASA Grants 80NSSC21K1772, 80NSSC23K0848 and United States National Science Foundation (NSF) Grant AGS-2045755.

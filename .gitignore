@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-# __pycache__/
+__pycache__/
 *.py[cod]
 *$py.class
 
@@ -76,7 +76,7 @@ docs/_build/
 target/
 
 # Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/
 
 # IPython
 profile_default/
@@ -166,4 +166,12 @@ cython_debug/
 *.zip
 *.png
 .DS_Store
-raw_data/
+data/
+cache/
+
+CLAUDE.md
+SOLID_analysis.md
+graveyard/
+
+.virtual_documents/
+Untitled.ipynb

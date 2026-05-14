@@ -1,0 +1,46 @@
+{
+  "region_name": "Global",
+  "start": "2019-12-01T00:00:00",
+  "end": "2019-12-02T23:59:59",
+  "freq": 14,
+  "data_dir": "data/madrigal",
+  "cache_dir": "cache",
+  "distance_range": { "min_dist": 0, "max_dist": 3000 },
+  "use_cache": true,
+  "chunk_size": 500000,
+
+  "preprocess": {
+    "expected_shape": [1440, 300],
+    "expected_size": 1440,
+    "x_trim": 0.08333,
+    "y_trim": 0.08,
+    "min_dev": 0.05,
+    "sigma": 4.2,
+    "occurrence_n": 60,
+    "i_max": 30
+  },
+
+  "edge_detection": {
+    "qs": [0.4, 0.5, 0.6],
+    "lower_cutoff": 10,
+    "select_min": true,
+    "exact_thresh": false,
+    "axis": 0,
+    "lowess_window_size": 10,
+    "max_abs_dev": 20
+  },
+
+  "fitting": {
+    "bandpass": true,
+    "lstid_T_hr_lim": [1, 4.5],
+    "roll_win": 15,
+    "stab_thresh": 0.05,
+    "margin_minutes": 30
+  },
+
+  "plotting": {
+    "ylim": [500, 2000],
+    "cb_pad": 0.125,
+    "output_dir": "output/daily_plots"
+  }
+}

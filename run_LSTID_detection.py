@@ -1,176 +1,325 @@
-#!/usr/bin/env python
-# coding: utf-8
+#!/usr/bin/env python3
+
 import os
-import shutil
-import datetime
-import pickle
+import math
+import time
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
+from datetime import datetime
+from datetime import timedelta
+import argparse, sys, json
+import polars as pl
+import pyarrow.parquet as pq
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from PIL import Image
+import logging
+import io
+import pandas as pd
+import warnings
 
-import hamsci_LSTID_detect as LSTID
+from scipy.ndimage import gaussian_filter
+from scipy.interpolate import CubicSpline
+from scipy.signal import butter, filtfilt
+import statsmodels.api as sm
 
-# EDIT PARAMETERS HERE #########################################################
-raw_processing_input_dir = 'raw_data'
-datasets                = ['PSK','RBN','WSPR']
+# Internal modules
+from scripts.regions import REGIONS
+from scripts.utils import split_datetime_range_by_day
+from scripts.utils_freq import *
+from scripts.json_loader import *
+from scripts.hdf5_loader import HDF5PolarsLoader
+from scripts.heatmap_preprocess import preprocess_heatmap
+from scripts.edge_detect import detect_edge
+from scripts.sinusoid_fitting import sin_fit
+from scripts.plot_lstid_paper import *
+from scripts.dfs_thesis import (thesis_plot_all_panels,
+                                thesis_plot_all_panels_no_labels,
+                                thesis_plot_all_panels_full)
 
-clear_cache              = True
-cache_dir                = 'cache'
-heatmap_csv_dir          = os.path.join(cache_dir,'heatmaps')
-edge_dir                 = os.path.join(cache_dir,'edge_detect')
-output_dir               = 'output'
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log = logging.getLogger(__name__)
 
-multiproc                = True # Use multiprocessing
-nprocs                   = multiprocessing.cpu_count()
 
-bandpass                 = True
-lstid_T_hr_lim           = (1, 4.5) # Bandpass filter cutoffs
-
-region                   = 'NA' # 'NA' --> North America
-freq_str                 = '14 MHz'
-sDate                    = datetime.datetime(2018,11,1)
-eDate                    = datetime.datetime(2019,4,30)
-
-# NO PARAMETERS BELOW THIS LINE ################################################
-def prep_dirs(*dirs,clear_cache=False):
+def daily_summary(fit_result, df, date, *,
+                  t_load=None, from_cache=False,
+                  t_preprocess=None, t_edge=None, t_fit=None):
     """
-    Prepare output directories:
-        1. If clear_cache is True, delete existing directory.
-        2. Create directory if it does not exist.
-
-    dirs:   strings of directory names
+    Build rows for the daily sinfit CSV summary.
+    Returns one row per sinfit attempt (all_sin_fits), sorted by R² descending.
+    If no stable window was found, returns a single NaN row for the date.
     """
-    for dr in dirs:
-        if clear_cache and os.path.exists(dr):
-            shutil.rmtree(dr)
+    n_spots = df.height
+    fitWin_0, fitWin_1 = fit_result.meta.get('fitWinLim', (None, None))
 
-    for dr in dirs:
-        if not os.path.exists(dr):
-            os.makedirs(dr)
-
-def get_dates(sDate,eDate):
-    """
-    Returns a list of each date from the sDate up to the eDate.
-    """
-    dates   = [sDate]
-    while dates[-1] < eDate:
-        dates.append(dates[-1]+datetime.timedelta(days=1))
-    
-    return dates
-
-def runEdgeDetectAndPlot(edgeDetectDict):
-    """
-    Wrapper function for edge detection and plotting to use with
-    multiprocessing.
-    """
-    date        = edgeDetectDict['date']
-    cache_dir   = edgeDetectDict.get('cache_dir','cache')
-    print('Edge Detection: {!s}'.format(date))
-
-    date_str    = date.strftime('%Y%m%d')
-    pkl_fname   = f'{date_str}_edgeDetect.pkl'
-    pkl_fpath   = os.path.join(cache_dir,pkl_fname)
-
-    if os.path.exists(pkl_fpath):
-        print('   LOADING: {!s}'.format(pkl_fpath))
-        with open(pkl_fpath,'rb') as fl:
-            result = pickle.load(fl)
+    if fitWin_0 is not None and fitWin_1 is not None:
+        fitStart    = pd.Timestamp(fitWin_0).strftime('%Y-%m-%d %H:%M')
+        fitEnd      = pd.Timestamp(fitWin_1).strftime('%Y-%m-%d %H:%M')
+        duration_hr = (pd.Timestamp(fitWin_1) - pd.Timestamp(fitWin_0)).total_seconds() / 3600
     else:
-        result  = LSTID.edge_detection.run_edge_detect(**edgeDetectDict)
+        fitStart = fitEnd = duration_hr = np.nan
 
-        if not os.path.exists(cache_dir):
-            os.mkdir(cache_dir)
+    t_load_cold   = t_load if not from_cache else np.nan
+    t_load_cached = t_load if from_cache     else np.nan
 
-        with open(pkl_fpath,'wb') as fl:
-            print('   PICKLING: {!s}'.format(pkl_fpath))
-            pickle.dump(result,fl)
+    all_sin_fits = fit_result.all_sin_fits
 
-    if result is None: # Missing Data Case
-       return 
+    if not all_sin_fits:
+        return [{
+            'date':               date.strftime('%Y-%m-%d'),
+            'selected':           np.nan,
+            'T_hr':               np.nan,
+            'T_hr_guess':         np.nan,
+            'amplitude_km':       np.nan,
+            'phase_hr':           np.nan,
+            'offset_km':          np.nan,
+            'slope_kmph':         np.nan,
+            'r2':                 np.nan,
+            'fitStart':           fitStart,
+            'fitEnd':             fitEnd,
+            'duration_hr':        duration_hr,
+            'min_combined_fit':   np.nan,
+            't_load_cold_sec':    t_load_cold,
+            't_load_cached_sec':  t_load_cached,
+            't_preprocess_sec':   t_preprocess,
+            't_edge_sec':         t_edge,
+            't_fit_sec':          t_fit,
+            'n_spots':            n_spots,
+        }]
+
+    has_combined = (len(fit_result.sin_fit) > 0 and len(fit_result.poly_fit) > 0)
+    min_combined = float(np.min(fit_result.sin_fit + fit_result.poly_fit)) if has_combined else np.nan
+
+    rows = []
+    for i, fit in enumerate(all_sin_fits):
+        selected = (i == 0)
+        rows.append({
+            'date':               date.strftime('%Y-%m-%d'),
+            'selected':           selected,
+            'T_hr':               fit.get('T_hr'),
+            'T_hr_guess':         fit.get('T_hr_guess'),
+            'amplitude_km':       fit.get('amplitude_km'),
+            'phase_hr':           fit.get('phase_hr'),
+            'offset_km':          fit.get('offset_km'),
+            'slope_kmph':         fit.get('slope_kmph'),
+            'r2':                 fit.get('r2'),
+            'fitStart':           fitStart,
+            'fitEnd':             fitEnd,
+            'duration_hr':        duration_hr,
+            'min_combined_fit':   min_combined if selected else np.nan,
+            't_load_cold_sec':    t_load_cold  if selected else np.nan,
+            't_load_cached_sec':  t_load_cached if selected else np.nan,
+            't_preprocess_sec':   t_preprocess  if selected else np.nan,
+            't_edge_sec':         t_edge        if selected else np.nan,
+            't_fit_sec':          t_fit         if selected else np.nan,
+            'n_spots':            n_spots,
+        })
+    return rows
+
+def process_one_day(args):
+    """Self-contained per-day worker: load → preprocess → edge detect → fit → plot."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import warnings
+    warnings.filterwarnings('ignore', category=RuntimeWarning,
+                            message='All-NaN slice encountered')
+    import dask
+    dask.config.set(scheduler='synchronous')
+
+    s_dt        = args['s_dt']
+    e_dt        = args['e_dt']
+    base_params = args['base_params']
+    pre_params  = args['pre_params']
+    edge_params = args['edge_params']
+    fit_params  = args['fit_params']
+    plot_params = args['plot_params']
+
+    loader     = HDF5PolarsLoader(**base_params, sDate=s_dt, eDate=e_dt)
+    from_cache = (loader.use_cache
+                  and loader.cache_path_df.exists()
+                  and loader.cache_path_hist.exists())
+
+    _t0    = time.perf_counter()
+    df     = loader.get_dataframe()
+    hist2d, meta = loader.gen_histogram()
+    t_load = round(time.perf_counter() - _t0, 2)
+
+    _t0          = time.perf_counter()
+    pre_result   = preprocess_heatmap(hist2d, meta, **pre_params)
+    t_preprocess = round(time.perf_counter() - _t0, 2)
+
+    _t0         = time.perf_counter()
+    edge_result = detect_edge(s_dt, pre_result, **edge_params)
+    t_edge      = round(time.perf_counter() - _t0, 2)
+
+    _t0        = time.perf_counter()
+    fit_result = sin_fit(edge_result, **fit_params)
+    t_fit      = round(time.perf_counter() - _t0, 2)
+
+    #stack_plot_preprocess(fit_result, df, **plot_params)
+    #stack_plot_preprocess_v2(fit_result, df, **plot_params)
+    #stack_plot_sinfit_v1(fit_result, **plot_params)
+    #stack_plot_sinfit_v2(fit_result, **plot_params)
+    #stack_plot_sinfit_v3(fit_result, **plot_params)
+    plot_all_panels_individual(fit_result, df, **plot_params)
+    thesis_plot_all_panels_full(fit_result, df, **plot_params)
+    thesis_plot_all_panels(fit_result, df, **plot_params)
+    thesis_plot_all_panels_no_labels(fit_result, df, **plot_params)
+
+    rows = daily_summary(
+        fit_result, df, s_dt,
+        t_load=t_load, from_cache=from_cache,
+        t_preprocess=t_preprocess, t_edge=t_edge, t_fit=t_fit,
+    )
+    return s_dt, rows, from_cache
+
+
+if __name__ == "__main__":
+
+    cfg, _ = load_config()
+
+    req_base  = ["data_dir","cache_dir","region_name","freq","distance_range","use_cache"]
+    req_pre   = ["expected_shape","expected_size","x_trim","y_trim","min_dev","sigma","occurrence_n","i_max"]
+    req_edg   = ["qs","lower_cutoff","select_min","exact_thresh","axis","lowess_window_size","max_abs_dev"]
+    req_fit   = ["bandpass","lstid_T_hr_lim","roll_win","stab_thresh","margin_minutes"]  
+    req_plot  = ["ylim","cb_pad","output_dir"]
     
-    result      = LSTID.plotting.curve_combo_plot(result)
-    return result
-
-tic = datetime.datetime.now()
-
-prep_dirs(cache_dir,heatmap_csv_dir,edge_dir,output_dir,clear_cache=clear_cache)
-dates   = get_dates(sDate,eDate)
-
-# Cache All Results to a Pickle File ###########################################
-sDate_str   = sDate.strftime('%Y%m%d')
-eDate_str   = eDate.strftime('%Y%m%d')
-pkl_fname   = '{!s}-{!s}_allResults.pkl'.format(sDate_str,eDate_str)
-pkl_fpath   = os.path.join(cache_dir,pkl_fname)
-if os.path.exists(pkl_fpath):
-    with open(pkl_fpath,'rb') as fl:
-        print('LOADING: {!s}'.format(pkl_fpath))
-        all_results = pickle.load(fl)
-else:    
-    ######################################## 
-    # Load Raw CSV data and create 2d hist CSV files
-    # Generate a list of dictionaries with parameters of each day to be processed.
-    rawProcDicts    = [] 
-    for date in dates:
-        tmp = dict(
-            start_date = date,
-            end_date   = date,
-            input_dir  = raw_processing_input_dir,
-            output_dir = heatmap_csv_dir,
-            region     = region,
-            freq_str   = freq_str,
-            datasets   = datasets,
-            csv_gen    = True,
-            hist_gen   = True,
-            geo_gen    = False,
-            dask       = False
-        )
-        rawProcDicts.append(tmp)
-
-    # Process each day of Raw Spots
-    if not multiproc: # NO multiprocessing
-        for rawProcDict in rawProcDicts:
-            LSTID.data_loading.runRawProcessing(rawProcDict)
-    else: # YES multiprocessing
-        with multiprocessing.Pool(nprocs) as pool:
-            pool.map(LSTID.data_loading.runRawProcessing,rawProcDicts)
+    base_cfg = cfg
+    pre_cfg  = cfg.get("preprocess", {})
+    edge_cfg = cfg.get("edge_detection", {})
+    fit_cfg  = cfg.get("fitting", {})
+    plot_cfg = cfg.get("plotting", {}) 
     
-    # Load in CSV Histograms/Heatmaps ###############
-    heatmaps    = LSTID.data_loading.HeatmapDateIter(heatmap_csv_dir)
+    missing = []
+    missing += [k for k in req_base if k not in base_cfg]
+    missing += [f"preprocess.{k}" for k in req_pre if k not in pre_cfg]
+    missing += [f"edge_detection.{k}" for k in req_edg if k not in edge_cfg]
+    missing += [f"fitting.{k}" for k in req_fit if k not in fit_cfg]  
+    missing += [f"plotting.{k}" for k in req_plot if k not in plot_cfg]
 
-    # Edge Detection, Curve Fitting, and Plotting ##########
-    edgeDetectDicts = []
-    for date in dates:
-        tmp = {}
-        tmp['date']           = date
-        tmp['cache_dir']      = edge_dir
-        tmp['bandpass']       = bandpass
-        tmp['heatmaps']       = heatmaps
-        tmp['lstid_T_hr_lim'] = lstid_T_hr_lim
-        tmp['datasets']       = datasets
-        tmp['region']         = region
-        tmp['freq_str']       = freq_str
-        edgeDetectDicts.append(tmp)
+    if missing:
+        raise KeyError(f"Missing required config keys: {missing}")
 
-    if not multiproc:
-        results = []
-        for edgeDetectDict in edgeDetectDicts:
-            result = runEdgeDetectAndPlot(edgeDetectDict)
-            results.append(result)
-    else:
-        with multiprocessing.Pool(nprocs) as pool:
-            results = pool.map(runEdgeDetectAndPlot,edgeDetectDicts)
+    base_params = dict(
+        data_dir=cfg["data_dir"],
+        cache_dir=cfg["cache_dir"],
+        region_bounds=REGIONS[cfg["region_name"]],
+        freq_range=FREQ[cfg["freq"]],
+        distance_range=cfg["distance_range"],
+        use_cache=cfg["use_cache"],
+        chunk_size=cfg.get("chunk_size", 500_000),
+    )
 
-    all_results = {}
-    for date,result in zip(dates,results):
-        if result is None: # No data case
-            continue
-        print(date)
-        all_results[date] = result
-        
-    with open(pkl_fpath,'wb') as fl:
-        print('PICKLING: {!s}'.format(pkl_fpath))
-        pickle.dump(all_results,fl)
+    pre_params = dict(
+        expected_shape=tuple(pre_cfg["expected_shape"]),
+        expected_size=int(pre_cfg["expected_size"]),
+        min_dev=float(pre_cfg["min_dev"]),
+        x_trim=float(pre_cfg["x_trim"]),
+        y_trim=float(pre_cfg["y_trim"]),
+        sigma=float(pre_cfg["sigma"]),
+        occurrence_n=int(pre_cfg["occurrence_n"]),
+        i_max=int(pre_cfg["i_max"]),
+    )
 
-LSTID.plotting.plot_sin_fit_analysis(all_results,output_dir=output_dir)
-LSTID.plotting.sin_fit_key_params_to_csv(all_results,output_dir=output_dir)
+    edge_params = dict(
+        qs=edge_cfg["qs"],
+        lower_cutoff=int(edge_cfg["lower_cutoff"]),
+        select_min=edge_cfg["select_min"],
+        exact_thresh=edge_cfg["exact_thresh"],
+        axis=int(edge_cfg["axis"]),
+        lowess_window_size=int(edge_cfg["lowess_window_size"]),
+        max_abs_dev=int(edge_cfg["max_abs_dev"]),
+    )
 
-toc = datetime.datetime.now()
-print('Processing and plotting time: {!s}'.format(toc-tic))
+    fit_params = dict(
+        bandpass=bool(fit_cfg["bandpass"]),
+        lstid_T_hr_lim=tuple(fit_cfg["lstid_T_hr_lim"]),
+        roll_win=int(fit_cfg["roll_win"]),
+        stab_thresh=float(fit_cfg["stab_thresh"]),
+        margin_minutes=int(fit_cfg["margin_minutes"]),
+    )
+
+    plot_params = dict(
+        ylim=tuple(plot_cfg["ylim"]),
+        cb_pad=float(plot_cfg["cb_pad"]),
+        output_dir=plot_cfg["output_dir"],
+    )
+
+    # --- CSV summary path (constructed once from overall date range + filter params) ---
+    _dr         = cfg["distance_range"]
+    _min_dist   = _dr["min_dist"]
+    _max_dist   = _dr["max_dist"]
+    _sDate_str  = cfg["sDate"].strftime('%Y%m%d')
+    _eDate_str  = cfg["eDate"].strftime('%Y%m%d')
+    _region_str = cfg["region_name"].replace(' ', '_')
+    _csv_dir    = os.path.join("output", "summary_csv")
+    os.makedirs(_csv_dir, exist_ok=True)
+    csv_path = os.path.join(
+        _csv_dir,
+        f"{_sDate_str}-{_eDate_str}_{_region_str}_{cfg['freq']}MHz"
+        f"_{_min_dist}-{_max_dist}km_sinfit.csv"
+    )
+
+    day_args = []
+    for s_dt, e_dt, _ in split_datetime_range_by_day(cfg["sDate"], cfg["eDate"]):
+        day_args.append(dict(
+            s_dt=s_dt,
+            e_dt=e_dt,
+            base_params=base_params,
+            pre_params=pre_params,
+            edge_params=edge_params,
+            fit_params=fit_params,
+            plot_params=plot_params,
+        ))
+
+    n_workers = min(cfg.get("n_workers", multiprocessing.cpu_count()), len(day_args))
+    log.info(f"Processing {len(day_args)} day(s) with {n_workers} worker(s)...")
+
+    completed = {}
+    failed    = []
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        futures = {executor.submit(process_one_day, args): args['s_dt'] for args in day_args}
+        pending = set(futures.keys())
+
+        while pending:
+            done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+            for future in done:
+                date = futures[future]
+                try:
+                    s_dt, rows, from_cache = future.result()
+                    completed[s_dt] = (rows, from_cache)
+                    log.info(f"Completed: {date.date()}")
+                except Exception as e:
+                    log.error(f"Failed: {date.date()} — {e}", exc_info=True)
+                    failed.append(date)
+
+    log.info("Writing CSV summary...")
+    for s_dt in sorted(completed):
+        rows, from_cache = completed[s_dt]
+        new_df = pd.DataFrame(rows)
+        date_str_csv = s_dt.strftime('%Y-%m-%d')
+        if os.path.exists(csv_path):
+            existing       = pd.read_csv(csv_path)
+            existing_day   = existing[existing['date'] == date_str_csv]
+            existing_other = existing[existing['date'] != date_str_csv]
+            if not existing_day.empty:
+                prev = existing_day.iloc[0]
+                if from_cache:
+                    cold_prev = prev.get('t_load_cold_sec', np.nan)
+                    new_df.loc[new_df['selected'] == True, 't_load_cold_sec'] = cold_prev
+                else:
+                    cached_prev = prev.get('t_load_cached_sec', np.nan)
+                    new_df.loc[new_df['selected'] == True, 't_load_cached_sec'] = cached_prev
+            combined = pd.concat([existing_other, new_df], ignore_index=True)
+            combined.to_csv(csv_path, index=False)
+        else:
+            new_df.to_csv(csv_path, index=False)
+    log.info(f"CSV summary saved: {csv_path}")
+
+    if failed:
+        log.warning(f"{len(failed)} day(s) failed: {[d.date() for d in failed]}")
+    log.info("Pipeline complete!")
+
